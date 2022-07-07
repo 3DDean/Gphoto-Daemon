@@ -1,0 +1,20 @@
+---
+BasedOnStyle: Microsoft
+UseTab: Always
+
+Standard: Latest
+NamespaceIndentation: Inner
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+AlignAfterOpenBracket: Align
+AllowAllArgumentsOnNextLine: true
+BreakInheritanceList: AfterColon
+ColumnLimit: 0
+AllowAllArgumentsOnNextLine: false
+AlignTrailingComments: true
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  SplitEmptyRecord: false
+  SplitEmptyFunction: false
+  BeforeLambdaBody: true
