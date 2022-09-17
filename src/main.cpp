@@ -2,101 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gphoto.h"
 #include <gphoto2/gphoto2-camera.h>
+
+#include <fstream>
+#include <iostream>
+#include <string>
 
 // Sample Camera
 
-static GPPortInfoList *portinfolist = NULL;
-static CameraAbilitiesList *abilities = NULL;
-
-/*
- * This detects all currently attached cameras and returns
- * them in a list. It avoids the generic usb: entry.
- *
- * This function does not open nor initialize the cameras yet.
- */
-int sample_autodetect(CameraList *list, GPContext *context)
-{
-	gp_list_reset(list);
-	return gp_camera_autodetect(list, context);
-}
-
-/*
- * This function opens a camera depending on the specified model and port.
- */
-int sample_open_camera(Camera **camera, const char *model, const char *port, GPContext *context)
-{
-	int ret, m, p;
-	CameraAbilities a;
-	GPPortInfo pi;
-
-	ret = gp_camera_new(camera);
-	if (ret < GP_OK)
-		return ret;
-
-	if (!abilities)
-	{
-		/* Load all the camera drivers we have... */
-		ret = gp_abilities_list_new(&abilities);
-		if (ret < GP_OK)
-			return ret;
-		ret = gp_abilities_list_load(abilities, context);
-		if (ret < GP_OK)
-			return ret;
-	}
-
-	/* First lookup the model / driver */
-	m = gp_abilities_list_lookup_model(abilities, model);
-	if (m < GP_OK)
-		return ret;
-	ret = gp_abilities_list_get_abilities(abilities, m, &a);
-	if (ret < GP_OK)
-		return ret;
-	ret = gp_camera_set_abilities(*camera, a);
-	if (ret < GP_OK)
-		return ret;
-
-	if (!portinfolist)
-	{
-		/* Load all the port drivers we have... */
-		ret = gp_port_info_list_new(&portinfolist);
-		if (ret < GP_OK)
-			return ret;
-		ret = gp_port_info_list_load(portinfolist);
-		if (ret < 0)
-			return ret;
-		ret = gp_port_info_list_count(portinfolist);
-		if (ret < 0)
-			return ret;
-	}
-
-	/* Then associate the camera with the specified port */
-	p = gp_port_info_list_lookup_path(portinfolist, port);
-	switch (p)
-	{
-	case GP_ERROR_UNKNOWN_PORT:
-		fprintf(stderr, "The port you specified "
-						"('%s') can not be found. Please "
-						"specify one of the ports found by "
-						"'gphoto2 --list-ports' and make "
-						"sure the spelling is correct "
-						"(i.e. with prefix 'serial:' or 'usb:').",
-				port);
-		break;
-	default:
-		break;
-	}
-	if (p < GP_OK)
-		return p;
-
-	ret = gp_port_info_list_get_info(portinfolist, p, &pi);
-	if (ret < GP_OK)
-		return ret;
-	ret = gp_camera_set_port_info(*camera, pi);
-	if (ret < GP_OK)
-		return ret;
-	return GP_OK;
-}
+// static GPPortInfoList *portinfolist = NULL;
+// static CameraAbilitiesList *abilities = NULL;
 
 // SAMPLE CONTEXT
 static void
@@ -113,322 +29,76 @@ ctx_status_func(GPContext *context, const char *str, void *data)
 	fflush(stderr);
 }
 
-GPContext *sample_create_context()
-{
-	GPContext *context;
-
-	/* This is the mandatory part */
-	context = gp_context_new();
-
-	/* All the parts below are optional! */
-	gp_context_set_error_func(context, ctx_error_func, NULL);
-	gp_context_set_status_func(context, ctx_status_func, NULL);
-
-	/* also:
-	gp_context_set_cancel_func    (p->context, ctx_cancel_func,  p);
-		gp_context_set_message_func   (p->context, ctx_message_func, p);
-		if (isatty (STDOUT_FILENO))
-				gp_context_set_progress_funcs (p->context,
-						ctx_progress_start_func, ctx_progress_update_func,
-						ctx_progress_stop_func, p);
-	 */
-	return context;
-}
-
-// Sample AFL
-
 static void errordumper(GPLogLevel level, const char *domain, const char *str,
 						void *data)
 {
 	/* Do not log ... but let it appear here so we discover debug paths */
-	fprintf(stderr, "%s:%s\n", domain, str);
+	// fprintf(stderr, "%s:%s\n", domain, str);
 }
-
-// static int
-// recursive_directory(Camera *camera, const char *folder, GPContext *context, int *foundfile)
-// {
-// 	int i, ret;
-// 	CameraList *list;
-// 	const char *newfile;
-// 	CameraFileInfo fileinfo;
-// 	CameraFile *file;
-
-// 	ret = gp_list_new(&list);
-// 	if (ret < GP_OK)
-// 	{
-// 		printf("Could not allocate list.\n");
-// 		return ret;
-// 	}
-
-// 	ret = gp_camera_folder_list_folders(camera, folder, list, context);
-// 	if (ret < GP_OK)
-// 	{
-// 		printf("Could not list folders.\n");
-// 		gp_list_free(list);
-// 		return ret;
-// 	}
-// 	gp_list_sort(list);
-
-// 	for (i = 0; i < gp_list_count(list); i++)
-// 	{
-// 		const char *newfolder;
-// 		char *buf;
-// 		int havefile = 0;
-
-// 		gp_list_get_name(list, i, &newfolder);
-
-// 		if (!strlen(newfolder))
-// 			continue;
-
-// 		buf = malloc(strlen(folder) + 1 + strlen(newfolder) + 1);
-// 		strcpy(buf, folder);
-// 		if (strcmp(folder, "/")) /* avoid double / */
-// 			strcat(buf, "/");
-// 		strcat(buf, newfolder);
-
-// 		fprintf(stderr, "newfolder=%s\n", newfolder);
-
-// 		ret = recursive_directory(camera, buf, context, &havefile);
-// 		free(buf);
-// 		if (ret != GP_OK)
-// 		{
-// 			gp_list_free(list);
-// 			printf("Failed to recursively list folders.\n");
-// 			return ret;
-// 		}
-// 		if (havefile) /* only look for the first directory with a file */
-// 			break;
-// 	}
-// 	gp_list_reset(list);
-
-// 	ret = gp_camera_folder_list_files(camera, folder, list, context);
-// 	if (ret < GP_OK)
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not list files.\n");
-// 		return ret;
-// 	}
-// 	gp_list_sort(list);
-// 	if (gp_list_count(list) <= 0)
-// 	{
-// 		gp_list_free(list);
-// 		return GP_OK;
-// 	}
-
-// 	gp_list_get_name(list, 0, &newfile); /* only entry 0 needed */
-// 	ret = gp_camera_file_get_info(camera, folder, newfile, &fileinfo, context);
-// 	if (ret != GP_OK)
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not get file info.\n");
-// 		return ret;
-// 	}
-
-// 	/* get file */
-// 	gp_file_new(&file);
-// 	ret = gp_camera_file_get(camera, folder, newfile, GP_FILE_TYPE_NORMAL, file, context);
-// 	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not get file.\n");
-// 		return ret;
-// 	}
-// 	gp_file_unref(file);
-// 	/* get preview */
-// 	gp_file_new(&file);
-// 	ret = gp_camera_file_get(camera, folder, newfile, GP_FILE_TYPE_PREVIEW, file, context);
-// 	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not get file preview.\n");
-// 		return ret;
-// 	}
-// 	gp_file_unref(file);
-// 	/* get exif */
-// 	gp_file_new(&file);
-// 	ret = gp_camera_file_get(camera, folder, newfile, GP_FILE_TYPE_EXIF, file, context);
-// 	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not get file preview.\n");
-// 		return ret;
-// 	}
-// 	gp_file_unref(file);
-// 	/* Trigger the ptp things */
-// 	gp_file_new(&file);
-// 	ret = gp_camera_file_get(camera, folder, newfile, GP_FILE_TYPE_METADATA, file, context);
-// 	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-// 	{
-// 		gp_list_free(list);
-// 		printf("Could not get file metadata.\n");
-// 		return ret;
-// 	}
-// 	gp_file_unref(file);
-// 	if (foundfile)
-// 		*foundfile = 1;
-// 	gp_list_free(list);
-// 	return GP_OK;
-// }
+void parseCMD()
+{
+}
 
 int main(int argc, char **argv)
 {
-	Camera *camera = NULL;
+	std::string pipe_filename;
+	std::string status_filename;
+
+	std::ifstream pipe_file;
+
+	GPhoto gphoto;
+
+	CameraObj camera;
 	int ret, storagecnt;
+
 	CameraStorageInformation *storageinfo;
-	GPPortInfoList *gpinfolist;
-	GPContext *context;
-	CameraWidget *rootwidget;
+
+	// CameraWidget *rootwidget;
 	char buf[200];
-	const char *name;
+	// const char *name;
 	CameraText summary;
 	CameraFile *file;
+	CameraFilePath path;
+	strcpy(path.folder, "test");
+	strcpy(path.name, "test");
 	/*CameraFilePath		path;*/
-	CameraList *list;
-	CameraAbilitiesList *abilities = NULL;
+	// CameraList *list;
+	// CameraAbilitiesList *abilities = NULL;
 
 	int error;
 	gp_log_add_func(GP_LOG_DEBUG, errordumper, NULL);
-
-	context = sample_create_context(); /* see context.c */
 
 	strcpy(buf, "usb:");
 	if (argc > 1)
 		strcat(buf, argv[1]);
 
-	// GPhoto gphoto(buf, error);
-
 	fprintf(stderr, "setting path %s.\n", buf);
 
-	gp_port_info_list_new(&gpinfolist);
-	ret = gp_port_info_list_load(gpinfolist);
-	if (ret < GP_OK)
-		return ret;
-
-	ret = gp_port_info_list_lookup_path(gpinfolist, buf);
-	if (ret < GP_OK)
-		return ret;
-
-	/* Detect all the cameras that can be autodetected... */
-	ret = gp_list_new(&list);
-	if (ret < GP_OK)
-		return 1;
-
-	/* Load all the camera drivers we have... */
-	ret = gp_abilities_list_new(&abilities);
-	if (ret < GP_OK)
-		return ret;
-	ret = gp_abilities_list_load(abilities, context);
-	if (ret < GP_OK)
-		return ret;
-	ret = gp_abilities_list_detect(abilities, gpinfolist, list, context);
-	if (ret < GP_OK)
-		return ret;
-
-	gp_port_info_list_free(gpinfolist);
-	gp_abilities_list_free(abilities);
-
-	fprintf(stderr, "detect list has count %d\n", gp_list_count(list));
-
-	ret = gp_list_get_name(list, 0, &name);
-	if (ret < GP_OK)
-		goto out;
-
-	fprintf(stderr, "name is %s\n", name);
-
-	ret = sample_open_camera(&camera, name, buf, context);
-	if (ret < GP_OK)
-	{
-		fprintf(stderr, "camera %s at %s not found.\n", name, buf);
-		gp_list_free(list);
-		goto out;
-	}
-	gp_list_free(list);
-
-	ret = gp_camera_init(camera, context);
-	if (ret < GP_OK)
-	{
-		fprintf(stderr, "No camera auto detected.\n");
-		goto out;
-	}
-
-	/* AFL PART STARTS HERE */
-
-	// ret = recursive_directory(camera, "/", context, NULL);
-	// if (ret < GP_OK) {
-	// 	printf ("Could not recursive list files.\n");
-	// 	goto out;
+	// bool running = true;
+	// while(running)
+	// {
+	// 	pipe_file.open(pipe_filename);
+	// 	int length = pipe_file.tellg();
+	// 	char * buffer = new char [length];
 	// }
 
-	ret = gp_camera_get_summary(camera, &summary, context);
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-	{
-		printf("Could not get summary.\n");
-		goto out;
-	}
-
-#if 1
-	ret = gp_camera_get_config(camera, &rootwidget, context);
+	ret = gphoto.detectCameras(buf);
 	if (ret < GP_OK)
-	{
-		fprintf(stderr, "Could not get config.\n");
-		goto out;
-	}
-	gp_widget_free(rootwidget);
-#endif
-	printf("OK, %s\n", summary.text);
+		return ret;
 
-	ret = gp_camera_get_storageinfo(camera, &storageinfo, &storagecnt, context);
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-	{
-		printf("Could not get storage info.\n");
-		goto out;
-	}
-	free(storageinfo);
+ 	gphoto.openCamera(camera, buf);
 
-	ret = gp_camera_trigger_capture(camera, context);
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-	{
-		printf("Could not trigger capture.\n");
-		goto out;
-	}
+	gphoto.getSummary(camera, summary);
 
-	while (1)
-	{
-		CameraEventType evttype;
-		void *data = NULL;
+	gphoto.getStorageInfo(camera, storageinfo, storagecnt);
 
-		ret = gp_camera_wait_for_event(camera, 1, &evttype, &data, context);
-		if (ret < GP_OK)
-			break;
-		if (data)
-			free(data);
-		if (evttype == GP_EVENT_TIMEOUT)
-			break;
-	}
+	// gphoto.capture(camera, &path);
 
-	gp_file_new(&file);
-	ret = gp_camera_capture_preview(camera, file, context);
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-	{
-		gp_file_free(file);
-		printf("Could not capture preview.\n");
-		goto out;
-	}
-	gp_file_free(file);
-
-#if 0
-	/* this gives endless event check loops occasionaly ... need review how to do this best */
-	ret = gp_camera_capture (camera, GP_CAPTURE_IMAGE, &path, context);
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED)) {
-		printf ("Could not capture preview.\n");
-		goto out;
-	}
-#endif
-
+	// // gphoto.triggerCapture(camera);
+	// gphoto.capture_preview(camera);
 	/* AFL PART ENDS HERE */
-out:
-	gp_camera_exit(camera, context);
-	gp_context_unref(context);
-	gp_camera_free(camera);
+
+	gphoto.exitCamera(camera);
+
 	return 0;
 }
