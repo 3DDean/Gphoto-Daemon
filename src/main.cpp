@@ -5,100 +5,86 @@
 #include "gphoto.h"
 #include <gphoto2/gphoto2-camera.h>
 
+#include <Commander.h>
 #include <fstream>
 #include <iostream>
+#include <signal.h>
 #include <string>
 
-// Sample Camera
 
-// static GPPortInfoList *portinfolist = NULL;
-// static CameraAbilitiesList *abilities = NULL;
-
-// SAMPLE CONTEXT
-static void
-ctx_error_func(GPContext *context, const char *str, void *data)
+bool running = true;
+void term(int signum)
 {
-	fprintf(stderr, "\n*** Contexterror ***              \n%s\n", str);
-	fflush(stderr);
+	running = false;
 }
 
-static void
-ctx_status_func(GPContext *context, const char *str, void *data)
+struct CameraOps
 {
-	fprintf(stderr, "%s\n", str);
-	fflush(stderr);
-}
+	int getSummary(CameraText &);
+	int getConfig(CameraWidget *);
+	int getStorageInfo(CameraStorage &);
+	int capture();
+};
 
-static void errordumper(GPLogLevel level, const char *domain, const char *str,
-						void *data)
-{
-	/* Do not log ... but let it appear here so we discover debug paths */
-	// fprintf(stderr, "%s:%s\n", domain, str);
-}
-void parseCMD()
-{
-}
+int getSummary(CameraText &);
+int getConfig(CameraWidget *);
+int getStorageInfo(CameraStorage &);
 
 int main(int argc, char **argv)
 {
-	std::string pipe_filename;
-	std::string status_filename;
-
-	std::ifstream pipe_file;
+	struct sigaction action;
+	memset(&action, 0, sizeof(struct sigaction));
+	action.sa_handler = term;
+	sigaction(SIGTERM, &action, NULL);
+	sigaction(SIGINT, &action, NULL);
 
 	GPhoto gphoto;
 
-	CameraObj camera;
-	int ret, storagecnt;
+	CameraObj activeCamera;
+	CameraStorage storage;
 
-	CameraStorageInformation *storageinfo;
+	auto capture = [&activeCamera]()
+	{ activeCamera.capture(); };
 
-	// CameraWidget *rootwidget;
-	char buf[200];
-	// const char *name;
-	CameraText summary;
-	CameraFile *file;
-	CameraFilePath path;
-	strcpy(path.folder, "test");
-	strcpy(path.name, "test");
-	/*CameraFilePath		path;*/
-	// CameraList *list;
-	// CameraAbilitiesList *abilities = NULL;
+	auto getSummarylmb = [&activeCamera]()
+	{
+		CameraText data;
+		activeCamera.getSummary(data);
+		std::printf("%s", data.text);
+	};
 
-	int error;
-	gp_log_add_func(GP_LOG_DEBUG, errordumper, NULL);
+	auto getConfiglmb = [&activeCamera]()
+	{
+		CameraWidget *data;
+		activeCamera.getConfig(data);
+		int childCount = gp_widget_count_children(data);
+		std::printf("WidgetChildCount %i", childCount);
+		//currently doesn't output unsure why
+	};
+	
+	auto getStorageInfolmb = [&activeCamera]()
+	{
+		CameraStorage data;
+		activeCamera.getStorageInfo(data);
+		std::printf("add %i", data.count);
+		std::cout << data.count << "\n\n";
+	};
 
-	strcpy(buf, "usb:");
-	if (argc > 1)
-		strcat(buf, argv[1]);
+	auto test = std::make_tuple(
+		Instruction<"CI", void()>(capture),
+		Instruction<"AA", void()>(getSummarylmb),
+		Instruction<"AB", void()>(getConfiglmb),
+		Instruction<"AC", void()>(getStorageInfolmb));
 
-	fprintf(stderr, "setting path %s.\n", buf);
+	Commander shepherd("/home/threedean/Documents/Temp/gphoto2In", test);
 
-	// bool running = true;
-	// while(running)
-	// {
-	// 	pipe_file.open(pipe_filename);
-	// 	int length = pipe_file.tellg();
-	// 	char * buffer = new char [length];
-	// }
+	gphoto.openCamera(0, activeCamera);
 
-	ret = gphoto.detectCameras(buf);
-	if (ret < GP_OK)
-		return ret;
-
- 	gphoto.openCamera(camera, buf);
-
-	gphoto.getSummary(camera, summary);
-
-	gphoto.getStorageInfo(camera, storageinfo, storagecnt);
-
-	// gphoto.capture(camera, &path);
-
-	// // gphoto.triggerCapture(camera);
-	// gphoto.capture_preview(camera);
-	/* AFL PART ENDS HERE */
-
-	gphoto.exitCamera(camera);
+	while (running)
+	{
+		shepherd.read_instructions();
+		usleep(10000);
+	}
 
 	return 0;
 }
