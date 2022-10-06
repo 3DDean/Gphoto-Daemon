@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
-
+#include "type_descriptor.h"
 struct CameraObj;
 
 struct GPhoto
@@ -72,6 +72,7 @@ struct CameraObj
 	GPContext *context = nullptr;
 	Camera *ptr = nullptr;
 	CameraPath path;
+
 	int openCamera(char *buf);
 	int exitCamera();
 
@@ -84,7 +85,6 @@ struct CameraObj
 	int capture_preview();
 	int waitForEvent(int timeout);
 	int capture();
-	
 };
 
 

@@ -11,7 +11,6 @@
 #include <signal.h>
 #include <string>
 
-
 bool running = true;
 void term(int signum)
 {
@@ -43,7 +42,21 @@ int main(int argc, char **argv)
 	CameraObj activeCamera;
 	CameraStorage storage;
 
-	auto capture = [&activeCamera]()
+	Member<"context", &CameraObj::context> cameraContext;
+
+	Member<"openCamera", &CameraObj::openCamera> openCamera;
+	Member<"exitCamera", &CameraObj::exitCamera> exitCamera;
+	Member<"getSummary", &CameraObj::getSummary> getSummary;
+	Member<"getConfig", &CameraObj::getConfig> getConfig;
+	Member<"getStorageInfo", &CameraObj::getStorageInfo> getStorageInfo;
+	Member<"triggerCapture", &CameraObj::triggerCapture> triggerCapture;
+	Member<"capture_preview", &CameraObj::capture_preview> capture_preview;
+	Member<"waitForEvent", &CameraObj::waitForEvent> waitForEvent;
+	Member<"capture", &CameraObj::capture> capture;
+
+	// human_readable_type_with_error<Member<"context", &CameraObj::context>>::type> temp;
+	// openCamera::type
+	auto capturelmb = [&activeCamera]()
 	{ activeCamera.capture(); };
 
 	auto getSummarylmb = [&activeCamera]()
@@ -58,10 +71,10 @@ int main(int argc, char **argv)
 		CameraWidget *data;
 		activeCamera.getConfig(data);
 		int childCount = gp_widget_count_children(data);
-		std::printf("WidgetChildCount %i", childCount);
-		//currently doesn't output unsure why
+		// std::printf("WidgetChildCount %i", childCount);
+		// currently doesn't output unsure why
 	};
-	
+
 	auto getStorageInfolmb = [&activeCamera]()
 	{
 		CameraStorage data;
@@ -71,18 +84,23 @@ int main(int argc, char **argv)
 	};
 
 	auto test = std::make_tuple(
-		Instruction<"CI", void()>(capture),
-		Instruction<"AA", void()>(getSummarylmb),
-		Instruction<"AB", void()>(getConfiglmb),
-		Instruction<"AC", void()>(getStorageInfolmb));
+		Instruction<"CI", "capturing\n", void()>(capturelmb),
+		Instruction<"AA", "gettingSummery\n", void()>(getSummarylmb),
+		Instruction<"AB", "gettingConfig\n", void()>(getConfiglmb),
+		Instruction<"AC", "gettingStorage\n", void()>(getStorageInfolmb));
 
-	Commander shepherd("/home/threedean/Documents/Temp/gphoto2In", test);
+	Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
 
 	gphoto.openCamera(0, activeCamera);
 
+	// // auto testBar = cameraContext(activeCamera);
+	// capture(activeCamera);
+// shepherd.
 	while (running)
 	{
-		shepherd.read_instructions();
+		shepherd.wait_for_instructions();
+		// shepherd.setReady();
+
 		usleep(10000);
 	}
 

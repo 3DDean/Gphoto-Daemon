@@ -1,17 +1,17 @@
 #pragma once
+#include <fcntl.h>
 #include <filesystem>
 #include <string.h>
 #include <string>
 #include <unistd.h>
 
-//TODO make specializations for RO, WO, WR pipes
-
+// TODO make specializations for RO, WO, WR pipes
 
 // template <std::size_t Size>
 struct named_pipe;
-
+//TODO SOCKETS
 template <std::size_t Size>
-struct Buffer
+struct ReadBuffer
 {
 	template <typename T>
 	bool getParameters(T &_parameter)
@@ -66,26 +66,26 @@ struct Buffer
 	template <typename T>
 	T getVar()
 	{
-		T *out = (T *)(bytes+pos);
+		T *out = (T *)(bytes + pos);
 		pos += sizeof(T);
 		return *(out);
 		//(pos < bytesHeld) ? out : nullptr;
 	}
 	// friend struct named_pipe<Size>;
-	friend struct named_pipe;
+	friend struct read_pipe;
 	bool lastReadResult;
 	char bytes[Size];
 	// char bytes;
 	uint16_t pos;
-	uint16_t bytesHeld;
+	int32_t bytesHeld;
 
 	void reset()
 	{
-		lastReadResult=true;
+		lastReadResult = true;
 		long remaining = bytesHeld - pos;
 		if (remaining > 0)
 		{
-			memcpy(bytes +pos, bytes, remaining);
+			memcpy(bytes + pos, bytes, remaining);
 			bytesHeld = remaining;
 			pos = 0;
 		}
@@ -104,6 +104,12 @@ struct Buffer
 };
 
 // template <std::size_t Size>
+// struct ReadBuffer
+// {
+// }
+
+// template <std::size_t Size>
+
 struct named_pipe
 {
 	named_pipe(const char *filePath, const int open_mode);
@@ -112,22 +118,57 @@ struct named_pipe
 
 	~named_pipe();
 
-	using PipeBuffer = Buffer<512>;
+  protected:
+	int pipe_fd;
+};
+
+struct read_pipe : public named_pipe
+{
+	read_pipe(const char *filePath)
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+	read_pipe(const std::string filePath)
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+	read_pipe(const std::filesystem::path filePath)
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+
+	using PipeBuffer = ReadBuffer<512>;
 
 	PipeBuffer &read()
 	{
 		buffer.reset();
-		buffer.bytesHeld = ::read(pipe_fd, buffer.data(), buffer.getUnwrittenSpace());
+		buffer.bytesHeld = ::read(named_pipe::pipe_fd, buffer.data(), buffer.getUnwrittenSpace());
 
 		return buffer;
 		// return ::read(pipe_fd, buffer, nbytes);
 	}
-	// int write()
-	// {
-
-	// }
 
   protected:
 	PipeBuffer buffer;
-	int pipe_fd;
+};
+
+struct write_pipe : public named_pipe
+{
+	// write_pipe(const char *filePath)
+	// 	: named_pipe(filePath, O_WRONLY){};
+	// write_pipe(const std::string filePath)
+	// 	: named_pipe(filePath, O_WRONLY){};
+	// write_pipe(const std::filesystem::path filePath)
+	// 	: named_pipe(filePath, O_WRONLY){};
+	write_pipe(const char *filePath)
+		: named_pipe(filePath, O_RDWR | O_NONBLOCK){};
+	write_pipe(const std::string filePath)
+		: named_pipe(filePath, O_RDWR | O_NONBLOCK){};
+	write_pipe(const std::filesystem::path filePath)
+		: named_pipe(filePath, O_RDWR | O_NONBLOCK){};
+
+	void write(std::string_view str)
+	{
+		::write(named_pipe::pipe_fd, str.data(), str.size());
+	}
+
+	// void write(std::string str)
+	// {
+	// 	::write(named_pipe::pipe_fd, str.data(), str.size());
+	// }
+	// O_WRONLY
 };

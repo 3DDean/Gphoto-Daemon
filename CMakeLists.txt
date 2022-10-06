@@ -12,7 +12,7 @@ set(SROURCE_FILES main.cpp gphoto.cpp named_pipe.cpp)
 list(TRANSFORM SROURCE_FILES PREPEND ${SRC_DIR}/)
 
 add_executable(GphotoDeamon ${SROURCE_FILES})
-include_directories(include libgphoto2/gphoto2)
+include_directories(include libgphoto2)
 
 target_link_libraries(GphotoDeamon gphoto2 gphoto2_port)
 
