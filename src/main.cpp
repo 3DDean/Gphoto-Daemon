@@ -31,6 +31,7 @@ int getStorageInfo(CameraStorage &);
 
 int main(int argc, char **argv)
 {
+
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
 	action.sa_handler = term;
@@ -48,6 +49,7 @@ int main(int argc, char **argv)
 	Member<"exitCamera", &CameraObj::exitCamera> exitCamera;
 	Member<"getSummary", &CameraObj::getSummary> getSummary;
 	Member<"getConfig", &CameraObj::getConfig> getConfig;
+
 	Member<"getStorageInfo", &CameraObj::getStorageInfo> getStorageInfo;
 	Member<"triggerCapture", &CameraObj::triggerCapture> triggerCapture;
 	Member<"capture_preview", &CameraObj::capture_preview> capture_preview;
@@ -56,6 +58,8 @@ int main(int argc, char **argv)
 
 	// human_readable_type_with_error<Member<"context", &CameraObj::context>>::type> temp;
 	// openCamera::type
+
+	auto getStatus = [](){};
 	auto capturelmb = [&activeCamera]()
 	{ activeCamera.capture(); };
 
@@ -83,24 +87,41 @@ int main(int argc, char **argv)
 		std::cout << data.count << "\n\n";
 	};
 
-	auto test = std::make_tuple(
-		Instruction<"CI", "capturing\n", void()>(capturelmb),
-		Instruction<"AA", "gettingSummery\n", void()>(getSummarylmb),
-		Instruction<"AB", "gettingConfig\n", void()>(getConfiglmb),
-		Instruction<"AC", "gettingStorage\n", void()>(getStorageInfolmb));
-
-	Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
+	// Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
+	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
 
 	gphoto.openCamera(0, activeCamera);
+	std::string socketPath= "/run/gphoto2.sock";
+	// std::string socketPath= "/home/threeddean/Documents/gphoto2.sock";
 
-	// // auto testBar = cameraContext(activeCamera);
-	// capture(activeCamera);
-// shepherd.
+	using ServerSocketT = ServerSocket<AF_UNIX>;
+	using StatusMessengerT = StatusMessenger<ServerSocketT>;
+
+	ServerSocketT socket(SOCK_DGRAM, 5, socketPath.c_str());
+	StatusMessengerT statusMsgr(socket.socket_desc);
+
+	auto instructions = std::make_tuple(&statusMsgr,
+		Instruction<"status\n", void()>(getStatus),
+		Instruction<"capturing\n", void()>(capturelmb),
+		Instruction<"gettingSummery\n", void()>(getSummarylmb),
+		Instruction<"gettingConfig\n", void()>(getConfiglmb),
+		Instruction<"gettingStorage\n", void()>(getStorageInfolmb));
+
+
+	std::printf("Ready\n");
+
+	MsgBuffer<512> msgBuffer(socket.socket_desc);
 	while (running)
 	{
-		shepherd.wait_for_instructions();
-		// shepherd.setReady();
+		auto buffer = msgBuffer.rec_msg();
+		
+		uint16_t opCode;
+		if (buffer.read(opCode))
+		{
+			std::printf("opcode %i \n", opCode);
 
+			tupleFunctorSwitch(instructions, opCode, buffer);
+		}
 		usleep(10000);
 	}
 

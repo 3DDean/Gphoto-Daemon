@@ -48,19 +48,52 @@ struct Socket_Address<struct sockaddr_in>
 template <>
 struct Socket_Address<struct sockaddr_un>
 {
-	struct sockaddr_un address;
+	using Type = Socket_Address<struct sockaddr_un>;
+	using Socket_Type = struct sockaddr_un;
+	static constexpr size_t maxPathLen = sizeof(Socket_Type::sun_path);
+	static constexpr size_t familySize = sizeof(Socket_Type::sun_family);
 
-	inline void init(const char *pathname)
+	struct sockaddr_un address;
+	size_t len = sizeof(Socket_Type);
+
+	Socket_Address(){}
+
+	Socket_Address(struct sockaddr_un address, size_t len) : address(address), len(len)
+	{}
+
+	Socket_Address(Type& address) : address(address.address), len(address.len)
+	{}
+
+	Socket_Address(const char *pathname)
 	{
-		address.sun_family = AF_UNIX;
+		address.sun_family = AF_LOCAL;
 		strcpy(address.sun_path, pathname);
+	}
+
+	size_t pathSize() const
+	{
+		return len - familySize;
+	}
+
+
+	bool operator<(const Type &obj2) const
+	{
+		for (std::size_t i = 0; i < pathSize(); i++)
+		{
+			if (address.sun_path[i] != obj2.address.sun_path[i])
+			{
+				return address.sun_path[i] < obj2.address.sun_path[i];
+			}
+		}
+		return false;
+		//The two values are exactly the same
 	}
 };
 
 template <typename AddressT, std::array supported_types>
 struct Socket_Base
 {
-	using Socket_Type = AddressT;
+	using Address_Type = Socket_Address<AddressT>;
 	int socket_desc;
 	Socket_Address<AddressT> address;
 
@@ -72,14 +105,13 @@ struct Socket_Base
 	template <typename... ArgsT>
 	inline void set_address(ArgsT... Args)
 	{
-		address.init(Args...);
+		address = Address_Type(Args...);
 	}
 };
 // 	int addrlen = sizeof(address);
 
 template <int Domain>
 struct Socket;
-
 
 template <int Domain>
 struct ClientSocket : Socket<Domain>
@@ -127,3 +159,100 @@ struct Socket<AF_INET> : Socket_Base<struct sockaddr_in, std::array{SOCK_STREAM,
 template <>
 struct Socket<AF_UNIX> : Socket_Base<struct sockaddr_un, std::array{SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET}>
 {};
+
+// template <int Domain>
+// struct Server
+// {
+// 	Socket<Domain> socket;
+// };
+
+// template <int Domain>
+// struct Client
+// {
+// 	Socket<Domain> socket;
+// };
+
+// struct SocketConnection
+// {
+// 	int socket_desc;
+// 	struct sockaddr_un address;
+// 	int connection_desc;
+// 	const size_t bufferLen = 1024;
+// 	char buffer[1024] = {0};
+
+// 	SocketConnection(const char *pathname)
+// 	{
+// 		SOCKET_LOGGER("Creating Outbound Socket");
+
+// 		socket_desc = socket(AF_UNIX, SOCK_STREAM, 0);
+// 		SOCKET_ERROR_CHECK(socket_desc, "\n Socket creation error \n");
+
+// 		address.sun_family = AF_UNIX;
+// 		strcpy(address.sun_path, pathname);
+
+// 		SOCKET_LOGGER("Attempting Connection");
+
+// 		connection_desc = connect(socket_desc, (struct sockaddr *)&address, sizeof(address));
+// 		if (connection_desc < 0)
+// 		{
+// 			SOCKET_LOGGER("Connection Failed");
+// 		}
+// 		else
+// 		{
+// 			SOCKET_LOGGER("Succsessfull Connection");
+// 		}
+
+// 		// SOCKET_ERROR_CHECK(connection_desc, "\nConnection Failed \n");
+// 	}
+
+// 	~SocketConnection()
+// 	{
+// 		close(connection_desc);
+// 	}
+// 	template <typename T>
+// 	void sendData(T _data)
+// 	{
+// 		send(socket_desc, (void *)&_data, sizeof(T), 0);
+// 	}
+// };
+
+// struct Server
+// {
+// 	int socket_desc;
+// 	int connection_desc;
+// 	struct sockaddr_un address;
+// 	int opt = 1;
+// 	int addrlen = sizeof(address);
+
+// 	Server(const char *pathname)
+// 	{
+// 		// SOCKET_LOGGER("Creating Listening Socket");
+// 		// socket_desc = socket(AF_UNIX, SOCK_STREAM, 0);
+// 		// SOCKET_ERROR_CHECK(socket_desc, "Failed to create socket");
+
+// 		// // Forcefully attaching socket to the port 8080
+// 		// SOCKET_ERROR_CHECK(setsockopt(socket_desc, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)),
+// 		// 				   "Failed to set socket option")
+
+// 		// address.sun_family = AF_UNIX;
+// 		// strcpy(address.sun_path, pathname);
+
+// 		SOCKET_ERROR_CHECK(bind(socket_desc, (struct sockaddr *)&address, sizeof(address)), "Failed to Bind socket");
+// 		SOCKET_ERROR_CHECK(listen(socket_desc, 5), "Failed to listen");
+// 		SOCKET_LOGGER("Creating Listening");
+
+// 		connection_desc = accept(socket_desc, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+// 		SOCKET_ERROR_CHECK(connection_desc, "Failed to accept");
+// 	}
+// 	~Server()
+// 	{
+// 		// closing the connected socket
+// 		close(connection_desc);
+// 		// closing the listening socket
+// 		shutdown(socket_desc, SHUT_RDWR);
+// 	}
+// 	ssize_t readSock(void *buf, size_t count)
+// 	{
+// 		return read(connection_desc, buf, count);
+// 	}
+// };

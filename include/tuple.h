@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <tuple>
+#include <utility>
 
 template <std::size_t I, typename T, typename... ArgsT>
 concept IndexedFunctorCall = requires(T _obj, ArgsT &..._args)
@@ -25,6 +26,13 @@ static inline constexpr bool callSwitchFunctor(ElementT &_element, ArgsT &..._ar
 }
 
 template <std::size_t I = 0, typename ElementT, typename... ArgsT>
+requires IndexedFunctorCall<I, ElementT, ArgsT...>
+static inline constexpr bool callSwitchFunctor(ElementT *_element, ArgsT &..._args)
+{
+	return _element->template operator()<I>(_args...);
+}
+
+template <std::size_t I = 0, typename ElementT, typename... ArgsT>
 requires FunctorCall<ElementT, ArgsT...>
 static inline constexpr bool callSwitchFunctor(ElementT &element, ArgsT &..._args)
 {
@@ -46,3 +54,16 @@ static inline constexpr bool tupleFunctorSwitch(std::tuple<Ts...> &_tuple, ArgsT
 	}
 	return false;
 }
+
+
+// template<typename T, T... ints, typename... ArgsT>
+// auto mk_tuple(std::integer_sequence<T, ints...> int_seq, ArgsT... _instructions)
+// {
+// 	std::tuple<ArgsT...>()
+// }
+
+// template<typename... ArgsT>
+// auto mk_tuple(ArgsT&... elements)
+// {
+// 	return mk_tuple(std::make_index_sequence<sizeof...(elements)>(), elements...);
+// }
