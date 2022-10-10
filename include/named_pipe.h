@@ -14,7 +14,7 @@ template <std::size_t Size>
 struct ReadBuffer
 {
 	template <typename T>
-	bool getParameters(T &_parameter)
+	bool read(T &_parameter)
 	{
 		std::size_t bytesRequired = sizeof(T);
 		if (bytesRequired < bytesHeld - pos)
@@ -33,7 +33,7 @@ struct ReadBuffer
 	}
 
 	template <typename... Args>
-	bool getParameters(std::tuple<Args...> &_parameters)
+	bool read(std::tuple<Args...> &_parameters)
 	{
 		std::size_t bytesRequired = (sizeof(Args) + ...);
 		if (bytesRequired < bytesHeld - pos)

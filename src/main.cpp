@@ -10,6 +10,7 @@
 #include <iostream>
 #include <signal.h>
 #include <string>
+#include "named_pipe.h"
 
 bool running = true;
 void term(int signum)
@@ -59,7 +60,6 @@ int main(int argc, char **argv)
 	// human_readable_type_with_error<Member<"context", &CameraObj::context>>::type> temp;
 	// openCamera::type
 
-	auto getStatus = [](){};
 	auto capturelmb = [&activeCamera]()
 	{ activeCamera.capture(); };
 
@@ -91,36 +91,34 @@ int main(int argc, char **argv)
 	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
 
 	gphoto.openCamera(0, activeCamera);
-	std::string socketPath= "/run/gphoto2.sock";
-	// std::string socketPath= "/home/threeddean/Documents/gphoto2.sock";
+	std::string pathDir = "/home/threeddean/Documents";
 
-	using ServerSocketT = ServerSocket<AF_UNIX>;
-	using StatusMessengerT = StatusMessenger<ServerSocketT>;
+	std::string pipeFile= "gphoto2.pipe";
+	std::string statusFile= "Status_gphoto2.txt";
 
-	ServerSocketT socket(SOCK_DGRAM, 5, socketPath.c_str());
-	StatusMessengerT statusMsgr(socket.socket_desc);
+	StatusMessenger statusMsgr(pathDir + "/"+ statusFile);
+	read_pipe instruction_pipe(pathDir + "/"+ pipeFile);
 
-	auto instructions = std::make_tuple(&statusMsgr,
-		Instruction<"status\n", void()>(getStatus),
+	auto instructions = std::make_tuple(
 		Instruction<"capturing\n", void()>(capturelmb),
 		Instruction<"gettingSummery\n", void()>(getSummarylmb),
 		Instruction<"gettingConfig\n", void()>(getConfiglmb),
 		Instruction<"gettingStorage\n", void()>(getStorageInfolmb));
 
-
 	std::printf("Ready\n");
 
-	MsgBuffer<512> msgBuffer(socket.socket_desc);
+	//TODO create a more sensible buffering system
+	// pipe_buffer<512> piperBuffer();
 	while (running)
 	{
-		auto buffer = msgBuffer.rec_msg();
+		auto buffer = instruction_pipe.read();
 		
 		uint16_t opCode;
 		if (buffer.read(opCode))
 		{
 			std::printf("opcode %i \n", opCode);
 
-			tupleFunctorSwitch(instructions, opCode, buffer);
+			tupleFunctorSwitch(instructions, opCode, statusMsgr, buffer);
 		}
 		usleep(10000);
 	}
