@@ -4,7 +4,7 @@
 #include <cstddef>
 // #include <ctll/fixed_string.hpp>
 
-//TODO look into replacing Fixed_Array with std::array
+// TODO look into replacing Fixed_Array with std::array
 template <typename T, std::size_t N>
 class Fixed_Array_Base
 {
@@ -42,11 +42,13 @@ template <typename T, std::size_t N>
 struct Fixed_Array : Fixed_Array_Base<T, N>
 {
   public:
-	constexpr Fixed_Array(const T (&src)[N]) : Fixed_Array_Base<T, N>(src) {}
-	constexpr Fixed_Array(const Fixed_Array<T, N> &src) : Fixed_Array_Base<T, N>(src) {}
-
+	constexpr Fixed_Array(const T (&src)[N])
+		: Fixed_Array_Base<T, N>(src) {}
+	constexpr Fixed_Array(const Fixed_Array<T, N> &src)
+		: Fixed_Array_Base<T, N>(src) {}
 	template <typename... ArgsT>
-	constexpr Fixed_Array(const ArgsT &...Args) : Fixed_Array_Base<T, N>(Args...)
+	constexpr Fixed_Array(const ArgsT &...Args)
+		: Fixed_Array_Base<T, N>(Args...)
 	{}
 };
 
@@ -93,8 +95,10 @@ struct Fixed_String : Fixed_Array_Base<char, N>
   public:
 	using Array = Fixed_Array_Base<char, N>;
 
-	constexpr Fixed_String(const char (&src)[N]) : Array(src) {}
-	constexpr Fixed_String(const Fixed_Array<char, N> &src) : Array(src) {}
+	constexpr Fixed_String(const char (&src)[N])
+		: Array(src) {}
+	constexpr Fixed_String(const Fixed_Array<char, N> &src)
+		: Array(src) {}
 
 	template <typename... ArgsT>
 	constexpr Fixed_String(const ArgsT &...Args)
@@ -121,22 +125,21 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 	// 	return ctll::fixed_string(Array::data);
 	// }
 
-	constexpr bool operator==(std::string_view& _str)
+	constexpr bool operator==(std::string_view &_str)
 	{
-		if(_str.size() == N)
+		if (_str.size() == N)
 		{
-			for(std::size_t i = 0; i < N; i++)
+			for (std::size_t i = 0; i < N; i++)
 			{
 				if (_str[i] != Array::data[i])
-				{
 					return false;
-				}
 			}
 			return true;
 		}
 		return false;
-	}	
+	}
 };
+
 template <std::size_t N>
 struct Array_Metadata<Fixed_String<N>> : Array_Metadata_Base<char, N>
 {};

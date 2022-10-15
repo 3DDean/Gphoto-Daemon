@@ -82,25 +82,3 @@ struct CameraObj
 	int waitForEvent(int timeout);
 	int capture();
 };
-
-
-struct gphoto_error : public std::exception
-{
-	template<typename... ArgsT>
-	gphoto_error(int ret, std::string msg, ArgsT... Args) : ret(ret)
-	{
-		// std::stringstream ss;
-		// fprintf(ss., msg, Args...);
-		// msg = ss.str();
-	}
-	int ret;
-	std::string msg;
-};
-template<typename... ArgsT>
-void gphoto2_check_result(int result, std::string msg = "Undefined Error", ArgsT... Args)
-{
-		if (result < GP_OK)
-	{
-		throw gphoto_error(result, msg, Args...);
-	}
-}

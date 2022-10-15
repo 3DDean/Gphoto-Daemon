@@ -1,4 +1,5 @@
 #include "gphoto.h"
+#include "gphoto-error.h"
 #include <iostream>
 #include <string.h>
 
@@ -22,28 +23,28 @@ int sample_open_camera(Camera **camera, const char *model, const char *port, GPC
 	CameraAbilities a;
 	GPPortInfo pi;
 
-	gphoto2_check_result(gp_camera_new(camera));
+	gp_error_check(gp_camera_new(camera));
 
 	if (!abilities)
 	{
 		/* Load all the camera drivers we have... */
-		gphoto2_check_result(gp_abilities_list_new(&abilities));
-		gphoto2_check_result(gp_abilities_list_load(abilities, context));
+		gp_error_check(gp_abilities_list_new(&abilities));
+		gp_error_check(gp_abilities_list_load(abilities, context));
 	}
 
 	/* First lookup the model / driver */
 	m = gp_abilities_list_lookup_model(abilities, model);
 	if (m < GP_OK)
 		return ret;
-	gphoto2_check_result(gp_abilities_list_get_abilities(abilities, m, &a));
-	gphoto2_check_result(gp_camera_set_abilities(*camera, a));
+	gp_error_check(gp_abilities_list_get_abilities(abilities, m, &a));
+	gp_error_check(gp_camera_set_abilities(*camera, a));
 
 	if (!portinfolist)
 	{
 		/* Load all the port drivers we have... */
-		gphoto2_check_result(gp_port_info_list_new(&portinfolist));
-		gphoto2_check_result(gp_port_info_list_load(portinfolist));
-		gphoto2_check_result(gp_port_info_list_count(portinfolist));
+		gp_error_check(gp_port_info_list_new(&portinfolist));
+		gp_error_check(gp_port_info_list_load(portinfolist));
+		gp_error_check(gp_port_info_list_count(portinfolist));
 	}
 
 	/* Then associate the camera with the specified port */
@@ -65,8 +66,8 @@ int sample_open_camera(Camera **camera, const char *model, const char *port, GPC
 	if (p < GP_OK)
 		return p;
 
-	gphoto2_check_result(gp_port_info_list_get_info(portinfolist, p, &pi));
-	gphoto2_check_result(gp_camera_set_port_info(*camera, pi));
+	gp_error_check(gp_port_info_list_get_info(portinfolist, p, &pi));
+	gp_error_check(gp_camera_set_port_info(*camera, pi));
 	return GP_OK;
 }
 
@@ -91,14 +92,14 @@ GPhoto::GPhoto()
 	context = gp_context_new();
 	gp_context_set_error_func(context, ctx_error_func, NULL);
 	gp_context_set_status_func(context, ctx_status_func, NULL);
-	gphoto2_check_result(detectCameras());
+	gp_error_check(detectCameras());
 
 	int cameraCount = gp_list_count(list);
 	detectedCameras.resize(cameraCount);
 
 	for (std::size_t i = 0; i < cameraCount; i++)
 	{
-		gphoto2_check_result(gp_list_get_name(list, i, &detectedCameras[i]));
+		gp_error_check(gp_list_get_name(list, i, &detectedCameras[i]));
 	}
 }
 
@@ -114,22 +115,22 @@ int GPhoto::detectCameras()
 	int ret;
 
 	gp_port_info_list_new(&gpinfolist);
-	gphoto2_check_result(gp_port_info_list_load(gpinfolist));
+	gp_error_check(gp_port_info_list_load(gpinfolist));
 
 	int count1 = gp_port_info_list_count(gpinfolist);
 
 	// Buffer read
-	gphoto2_check_result(gp_port_info_list_lookup_path(gpinfolist, "usb:"));
+	gp_error_check(gp_port_info_list_lookup_path(gpinfolist, "usb:"));
 	int count2 = gp_port_info_list_count(gpinfolist);
 
 	/* Detect all the cameras that can be autodetected... */
 	// Check if list is actually new
-	gphoto2_check_result(gp_list_new(&list), "ReturnValue %i", 1);
+	gp_error_check(gp_list_new(&list), "ReturnValue %i", 1);
 
 	/* Load all the camera drivers we have... */
-	gphoto2_check_result(gp_abilities_list_new(&abilities));
-	gphoto2_check_result(gp_abilities_list_load(abilities, context));
-	gphoto2_check_result(gp_abilities_list_detect(abilities, gpinfolist, list, context));
+	gp_error_check(gp_abilities_list_new(&abilities));
+	gp_error_check(gp_abilities_list_load(abilities, context));
+	gp_error_check(gp_abilities_list_detect(abilities, gpinfolist, list, context));
 
 	return GP_OK;
 }
@@ -240,7 +241,6 @@ int CameraObj::getConfig(CameraWidget *&rootwidget)
 		fprintf(stderr, "Could not get config.\n");
 	}
 	return ret;
-	// gp_widget_free(rootwidget);
 }
 
 int CameraObj::getStorageInfo(CameraStorage &storage)
