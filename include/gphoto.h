@@ -36,10 +36,6 @@ struct CameraStorage
 	CameraStorageInformation *info;
 	int count;
 };
-struct CameraWidgetObj
-{
-
-};
 
 struct CameraPath
 {

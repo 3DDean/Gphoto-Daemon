@@ -9,7 +9,7 @@ struct StatusMessenger
 
 	void set(std::string str = "ready")
 	{
-		std::ofstream status_file(filepath, std::ios_base::trunc | std::ios_base::in);
+		std::ofstream status_file(filepath, std::ios_base::trunc | std::ios_base::out);
 		if(status_file.is_open())
 		{
 			status_file << str;
@@ -17,7 +17,7 @@ struct StatusMessenger
 		}
 		else
 		{
-			std::printf("file not opened");
+			perror("file not opened");
 		}
 	}
 

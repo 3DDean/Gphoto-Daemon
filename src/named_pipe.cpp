@@ -14,14 +14,14 @@ named_pipe::named_pipe(const char *filepath, const int open_mode)
 		res = mkfifo(filepath, 0777);
 		if (res != 0)
 		{
-			logError("Could not create fifo %s\n", filepath);
+			perror("Could not create fifo\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 	pipe_fd = open(filepath, open_mode);
 	if (pipe_fd == -1)
 	{
-		logError("Could not open fifo %s in %i\n", filepath, open_mode);
+		perror("Could not open fifo\n");
 		exit(EXIT_FAILURE);
 	}
 }

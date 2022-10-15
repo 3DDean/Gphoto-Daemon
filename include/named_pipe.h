@@ -4,111 +4,59 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
-
-// TODO make specializations for RO, WO, WR pipes
-
-// template <std::size_t Size>
-struct named_pipe;
-//TODO SOCKETS
+#include "Buffer.h"
+	
 template <std::size_t Size>
-struct ReadBuffer
+struct pipe_buffer
 {
-	template <typename T>
-	bool read(T &_parameter)
+	constexpr static std::size_t maxSize = Size;
+	char data[Size];
+	std::size_t size = 0;
+
+	void read_pipe(int fd)
 	{
-		std::size_t bytesRequired = sizeof(T);
-		if (bytesRequired < bytesHeld - pos)
+		ssize_t amountRead = ::read(fd, data + size, maxSize - size);
+		if(amountRead > 0)
 		{
-			_parameter = getVar<T>();
-			lastReadResult = true;
+			size += amountRead;
+		}
+		else if (amountRead == 0)
+		{
+			size = 0;
 		}
 		else
 		{
-			lastReadResult = false;
-		}
-		return lastReadResult;
-		// T *out = (T *)(bytes[pos]);
-		// pos += sizeof(T);
-		// return (pos < bytesHeld) ? out : nullptr;
-	}
-
-	template <typename... Args>
-	bool read(std::tuple<Args...> &_parameters)
-	{
-		std::size_t bytesRequired = (sizeof(Args) + ...);
-		if (bytesRequired < bytesHeld - pos)
-		{
-			_parameters = std::make_tuple(getVar<Args>()...);
-			lastReadResult = true;
-		}
-		else
-		{
-			lastReadResult = false;
-		}
-		return lastReadResult;
-
-		return false;
-		// T *out = (T *)(bytes[pos]);
-		// pos += sizeof(T);
-		// return (pos < bytesHeld) ? out : nullptr;
-	}
-
-	uint16_t getBytesHeld()
-	{
-		return bytesHeld;
-	}
-	bool isGood()
-	{
-		return lastReadResult;
-	}
-
-  private:
-	template <typename T>
-	T getVar()
-	{
-		T *out = (T *)(bytes + pos);
-		pos += sizeof(T);
-		return *(out);
-		//(pos < bytesHeld) ? out : nullptr;
-	}
-	// friend struct named_pipe<Size>;
-	friend struct read_pipe;
-	bool lastReadResult;
-	char bytes[Size];
-	// char bytes;
-	uint16_t pos;
-	int32_t bytesHeld;
-
-	void reset()
-	{
-		lastReadResult = true;
-		long remaining = bytesHeld - pos;
-		if (remaining > 0)
-		{
-			memcpy(bytes + pos, bytes, remaining);
-			bytesHeld = remaining;
-			pos = 0;
-		}
-		else
-		{
-			bytesHeld = 0;
-			pos = 0;
+			std::printf("Failed to read pipe, %i", amountRead);
 		}
 	}
-	std::size_t getUnwrittenSpace()
-	{
-		return Size - bytesHeld;
-	}
-	char *data() { return bytes + bytesHeld; }
-	// static constexpr std::size_t size = Size;
 };
 
-// template <std::size_t Size>
-// struct ReadBuffer
-// {
-// }
+template <std::size_t Size>
+struct BufferReader<pipe_buffer<Size>> : BufferReader_Base
+{
+	using Base = BufferReader_Base;
+	using Buffer_Type = pipe_buffer<Size>;
 
-// template <std::size_t Size>
+	BufferReader(pipe_buffer<Size> &_buffer)
+		: buffer(_buffer),
+		BufferReader_Base(_buffer.data, _buffer.size)
+	{}
+
+	~BufferReader()
+	{
+		uint32_t remainingData = Base::dataEnd - Base::dataPos;
+		memcpy(buffer.data, Base::dataPos, remainingData);
+		buffer.size = remainingData;
+	}
+
+	pipe_buffer<Size> &buffer;
+};
+
+//TODO create a system for user controlled pipe flags
+// struct PipeFlags
+// {
+// 	const int nonblock = O_NONBLOCK;
+// };
 
 struct named_pipe
 {
@@ -124,26 +72,23 @@ struct named_pipe
 
 struct read_pipe : public named_pipe
 {
-	read_pipe(const char *filePath)
+	read_pipe(const char *filePath, const int open_flages = 0)
 		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
-	read_pipe(const std::string filePath)
+	read_pipe(const std::string filePath, const int open_flages = 0)
 		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
-	read_pipe(const std::filesystem::path filePath)
+	read_pipe(const std::filesystem::path filePath, const int open_flages = 0)
 		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
 
-	using PipeBuffer = ReadBuffer<512>;
+	template<std::size_t Size>
+	using PipeReader = BufferReader<pipe_buffer<Size>>;
 
-	PipeBuffer &read()
+	template<std::size_t Size>
+	auto read(pipe_buffer<Size>& buffer)
 	{
-		buffer.reset();
-		buffer.bytesHeld = ::read(named_pipe::pipe_fd, buffer.data(), buffer.getUnwrittenSpace());
-
-		return buffer;
-		// return ::read(pipe_fd, buffer, nbytes);
+		buffer.read_pipe(named_pipe::pipe_fd);
+		
+		return PipeReader<Size>(buffer);
 	}
-
-  protected:
-	PipeBuffer buffer;
 };
 
 struct write_pipe : public named_pipe

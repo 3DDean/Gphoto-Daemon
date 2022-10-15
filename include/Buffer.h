@@ -1,13 +1,17 @@
 #pragma once
 #include <string.h>
 #include <string>
-#include <unistd.h>
 #include <tuple>
+#include <unistd.h>
 
+// TODO endianness management
+//  #include <bit>
+//  template<std::endian Endianness>
 struct BufferReader_Base
 {
-	BufferReader_Base(char* buffer, size_t nBytes) : dataPos(buffer), dataEnd(buffer + nBytes)
-	{};
+	BufferReader_Base(char *buffer, size_t nBytes)
+		: dataPos(buffer),
+		  dataEnd(buffer + nBytes){};
 
 	template <typename... ArgsT>
 	bool read(std::tuple<ArgsT...> &_parameters)
@@ -19,7 +23,7 @@ struct BufferReader_Base
 	bool read(T &_value)
 	{
 		char *readEnd = dataPos + sizeof(T);
-		if (readEnd < dataEnd)
+		if (readEnd <= dataEnd)
 		{
 			read_internal(&_value);
 			return true;
@@ -53,7 +57,7 @@ struct BufferReader_Base
 	char *dataEnd;
 };
 
-template<typename T>
+template <typename T>
 struct BufferReader;
 
 

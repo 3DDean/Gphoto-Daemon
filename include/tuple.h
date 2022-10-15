@@ -55,6 +55,21 @@ static inline constexpr bool tupleFunctorSwitch(std::tuple<Ts...> &_tuple, ArgsT
 	return false;
 }
 
+template <std::size_t I = 0, typename... Ts, typename... ArgsT>
+static inline constexpr bool tupleForEach(std::tuple<Ts...> &_tuple, ArgsT &..._args)
+{
+	if constexpr (I < sizeof...(Ts))
+	{
+		auto& func = std::get<I>(_tuple);
+
+		if (callSwitchFunctor<I>(func, _args...))
+		{
+			return tupleForEach<I + 1>(_tuple, _args...);
+		}
+		return false;
+	}
+	return false;
+}
 
 // template<typename T, T... ints, typename... ArgsT>
 // auto mk_tuple(std::integer_sequence<T, ints...> int_seq, ArgsT... _instructions)
