@@ -41,20 +41,14 @@ struct html_parts
 			constant_size += parts.back().str.size();
 		}
 	}
-
-	// template< class It, class End >
-	// void create_part(html_part_type part_type, It first, End last)
-	// {
-	// 	parts.emplace(part_type, first, last);
-	// }
 };
 
-void html_proto_helper(const auto &str, html_parts &html_parts)
+template <auto Str>
+constexpr void html_proto_sub_helper(html_parts &html_parts)
 {
-	// std::vector<html_part> html_parts;
-	std::string_view lastMatch(str, 0);
+	std::string_view lastMatch(Str, 0);
 
-	for (auto [match, variableName] : ctre::range<"\\$\\{(.+?)\\}">(str))
+	for (auto [match, variableName] : ctre::range<"\\$\\{(.+?)\\}">(Str))
 	{
 		html_parts.create_part(html_part_type::constant, lastMatch.begin(), match.begin());
 		html_parts.create_part(html_part_type::substitutable, variableName.begin(), variableName.end());
@@ -64,20 +58,75 @@ void html_proto_helper(const auto &str, html_parts &html_parts)
 	html_parts.create_part(html_part_type::constant, lastMatch);
 }
 
-template <typename... ArgsT>
-void html_proto_helper(const ArgsT &...Args)
+static constexpr std::size_t get_size(auto FirstIt, auto LastIt, std::size_t count = 0)
 {
-	html_parts parts;
-	(html_proto_helper(Args, parts), ...);
+	if (FirstIt == LastIt)
+		return count;
+	return get_size(++FirstIt, LastIt, ++count);
+}
+
+static constexpr auto get_size(const auto &Range)
+{
+	return get_size(Range.begin(), Range.end());
+}
+
+template <typename T>
+struct regex_results_helper;
+
+template <typename CharT, typename... Captures>
+struct regex_results_helper<ctre::regex_results<CharT, Captures...>>
+{
+	using ctre_type = ctre::regex_results<CharT, Captures...>;
+
+	static constexpr std::size_t size = sizeof...(Captures) + 1;
+
+	using type = std::array<std::string_view, size>;
+
+	template <typename T, T... index>
+	constexpr type operator()(auto &result, std::integer_sequence<T, index...>)
+	{
+		return type{ctre::get<index>(result)...};
+	}
+	constexpr type operator()(auto &result) { return operator()(result, std::make_index_sequence<size>()); }
+};
+
+template <std::size_t Size>
+static constexpr auto to_array(const auto Range)
+{
+	using value_type = typename decltype(Range.begin())::value_type;
+	using result_converter = regex_results_helper<value_type>;
+	using result_type = typename result_converter::type;
+	result_converter converter;
+	std::array<result_type, Size> temp;
 
 	int i = 0;
-	i++;
+	for (auto var : Range)
+	{
+		temp[i] = converter(var);
+		i++;
+	}
+
+	return temp;
 }
+
+template <Fixed_String... ArgsT>
+struct html_element_maker
+{
+	static constexpr Fixed_String fullStr{ArgsT...};
+
+	static constexpr auto range = ctre::range<"\\$\\{(.+?)\\}">(fullStr.data);
+	static constexpr std::size_t capture_count = get_size(range);
+	static constexpr auto array = to_array<capture_count>(range);
+};
 
 void html_test()
 {
-	html_proto_helper("<input type=\"${type}\" id=\"${id}\" name=\"${name}\" ${value}>",
-					  "<label for=\"${id}\">${label}</label>");
+	using testType = html_element_maker<"<input type=\"${type}\" id=\"${id}\" name=\"${name}\" ${value}>", "<label for=\"${id}\">${label}</label>">;
+	auto range = testType::range;
+	auto array = testType::array;
+
+	int i = 0;
+	i++;
 }
 
 // template <Fixed_String... Values>
