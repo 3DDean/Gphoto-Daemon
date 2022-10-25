@@ -13,6 +13,7 @@
 #include <iostream>
 #include <signal.h>
 #include <string>
+#include "html_element.h"
 
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
@@ -43,8 +44,11 @@ int widget_writer(formater &_formater, CameraWidget *cameraWidget)
 	return 0;
 }
 
+
 int main(int argc, char **argv)
 {
+	html_test();
+
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
 	action.sa_handler = term;
@@ -94,17 +98,24 @@ int main(int argc, char **argv)
 	// Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
 	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
 
-	gphoto.openCamera(0, activeCamera);
+	if (gphoto.detectCameras() > 0)
+	{
+		gphoto.openCamera(0, activeCamera);
 
-	std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
+		std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
 
-	formater formater(widget_file);
-	CameraWidget *data;
+		formater formater(widget_file);
+		CameraWidget *data;
 
-	activeCamera.getConfig(data);
+		activeCamera.getConfig(data);
 
-	widget_writer(formater, data);
-	widget_file.close();
+		widget_writer(formater, data);
+		widget_file.close();
+	}
+	else
+	{
+		return -1;
+	}
 
 	StatusMessenger statusMsgr(pathDir + "/" + statusFile);
 	read_pipe instruction_pipe(pathDir + "/" + pipeFile, O_NONBLOCK);

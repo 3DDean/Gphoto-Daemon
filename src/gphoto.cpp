@@ -220,6 +220,11 @@ int GPhoto::openCamera(int index, CameraObj &camera)
 		camera.ptr = ptr;
 		//= CameraObj(context, ptr);
 	}
+	else
+	{
+		fprintf(stderr, "No camera's detected.\n");
+		
+	}
 	return ret;
 }
 
