@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <string_view>
 // #include <ctll/fixed_string.hpp>
 
 // TODO look into replacing Fixed_Array with std::array

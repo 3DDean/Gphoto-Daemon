@@ -2,6 +2,7 @@
 #include "Fixed_Array.h"
 #include "status.h"
 #include <tuple.h>
+#include <functional>
 
 template <Fixed_String Status, class F>
 struct Instruction;
