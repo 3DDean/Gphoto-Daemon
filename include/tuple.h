@@ -71,6 +71,20 @@ static inline constexpr bool tupleForEach(std::tuple<Ts...> &_tuple, ArgsT &..._
 	return false;
 }
 
+template <std::size_t I = 0, typename... Ts, typename... ArgsT>
+static inline constexpr bool tupleForEach(auto &_func, std::tuple<Ts...> &_tuple, ArgsT &..._args)
+{
+	if constexpr (I < sizeof...(Ts))
+	{
+		if (callSwitchFunctor<I>(_func, std::get<I>(_tuple), _args...))
+		{
+			return tupleForEach<I + 1>(_func, _tuple, _args...);
+		}
+		return false;
+	}
+	return false;
+}
+
 template <typename... T>
 struct tuple_cat;
 

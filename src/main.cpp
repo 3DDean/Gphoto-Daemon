@@ -13,7 +13,6 @@
 #include <iostream>
 #include <signal.h>
 #include <string>
-#include "html_element.h"
 
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
@@ -44,11 +43,19 @@ int widget_writer(formater &_formater, CameraWidget *cameraWidget)
 	return 0;
 }
 
+struct value_tester
+{
+	template <typename T, typename... ArgsT>
+	bool operator()(T &access_func, ArgsT&... Args)
+	//  requires(std::invocable)
+	{
+		const auto value = access_func(Args...);
+		return true;
+	}
+};
 
 int main(int argc, char **argv)
 {
-	html_test();
-
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
 	action.sa_handler = term;
@@ -65,8 +72,6 @@ int main(int argc, char **argv)
 
 	CameraObj activeCamera;
 	CameraStorage storage;
-
-	// human_readable_type_with_error<Member<"context", &CameraObj::context>>::type> temp;
 
 	auto capturelmb = [&activeCamera]()
 	{ activeCamera.capture(); };
@@ -97,23 +102,25 @@ int main(int argc, char **argv)
 
 	// Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
 	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
-
-	if (gphoto.detectCameras() > 0)
+	if (gphoto.detectedCameras.size() > 0)
 	{
 		gphoto.openCamera(0, activeCamera);
-
 		std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
 
 		formater formater(widget_file);
 		CameraWidget *data;
 
 		activeCamera.getConfig(data);
+	
+		value_tester tester;
+		tupleForEach(tester, widget_base_members, data);
 
 		widget_writer(formater, data);
 		widget_file.close();
 	}
 	else
 	{
+		std::printf("No cameras detected\n");
 		return -1;
 	}
 

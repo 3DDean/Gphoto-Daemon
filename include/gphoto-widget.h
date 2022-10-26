@@ -5,8 +5,146 @@
 #include "tuple.h"
 #include <array>
 #include <concepts>
+#include <functional>
 #include <gphoto2/gphoto2-widget.h>
 #include <type_traits>
+
+struct unused
+{};
+
+template <typename T>
+using widget_type = unused;
+
+template <typename T>
+struct widget_accessor
+{
+	static constexpr bool value = false;
+};
+
+template <typename T>
+struct widget_accessor<int(CameraWidget *, T)>
+{
+	using member_type = T;
+	static constexpr bool value = true;
+};
+template <typename T>
+struct widget_accessor<int(CameraWidget *, T *)>
+{
+	using member_type = T;
+	static constexpr bool value = true;
+};
+template <typename T>
+struct widget_accessor<int(CameraWidget *, T **)>
+{
+	using member_type = T*;
+	static constexpr bool value = true;
+};
+template <>
+struct widget_accessor<int(CameraWidget *)>
+{
+	using member_type = int;
+	static constexpr bool value = true;
+};
+
+template <typename T>
+static inline constexpr bool is_widget_accessor = widget_accessor<T>::value;
+
+template <Fixed_String Name>
+struct identifier
+{};
+
+template <Fixed_String Name, typename Getter, typename Setter = unused>
+struct accessor_base
+{
+	static constexpr Fixed_String type_str = "accessor";
+	static constexpr Fixed_String name_str = Name;
+
+	using getter_func = std::conditional_t<std::is_function_v<Getter>, std::function<Getter>, unused>;
+	using setter_func = std::conditional_t<std::is_function_v<Setter>, std::function<Setter>, unused>;
+
+	constexpr accessor_base(identifier<Name>, Getter *getter)
+		: getter(getter) {}
+	constexpr accessor_base(identifier<Name>, unused, Setter *setter)
+		: setter(setter) {}
+	constexpr accessor_base(identifier<Name>, Getter *getter, Setter *setter)
+		: getter(getter), setter(setter) {}
+
+	const getter_func getter;
+	const setter_func setter;
+
+	template <typename ParentT, typename T>
+	requires(std::invocable<setter_func, ParentT, T>) constexpr void operator()(ParentT base_obj, T value)
+	{
+		setter(base_obj, value);
+	}
+
+	template <typename ParentT>
+	requires(std::invocable<getter_func, ParentT>) constexpr auto operator()(ParentT base_obj) const
+	{
+		return getter(base_obj);
+	}
+};
+
+template <Fixed_String Name, typename Getter, typename Setter = unused>
+struct accessor : public accessor_base<Name, Getter, Setter>
+{
+	using accessor_base<Name, Getter, Setter>::accessor_base;
+};
+
+template <Fixed_String Name, typename Getter>
+accessor(identifier<Name>, Getter *getter) -> accessor<Name, Getter>;
+
+template <Fixed_String Name, typename Setter>
+accessor(identifier<Name>, unused, Setter *setter) -> accessor<Name, unused, Setter>;
+
+template <Fixed_String Name, typename Getter, typename Setter>
+accessor(identifier<Name>, Getter *getter, Setter *setter) -> accessor<Name, Getter, Setter>;
+
+// GPhoto2 widget accessors
+template <Fixed_String Name, typename Getter, typename Setter>
+requires(is_widget_accessor<Getter> || is_widget_accessor<Setter>) struct accessor<Name, Getter, Setter> : accessor_base<Name, Getter, Setter>
+{
+	using base = accessor_base<Name, Getter, Setter>;
+	using base::accessor_base;
+
+	using base::getter;
+	using base::setter;
+
+	using typename base::getter_func;
+	using typename base::setter_func;
+
+	using value_type = typename widget_accessor<Getter>::member_type;
+
+	using base::operator();
+
+	//I do not know if setter works
+	template <typename T>
+	requires(std::invocable<setter_func, CameraWidget *, T>) inline constexpr void operator()(CameraWidget *parent, T value)
+	{
+		gp_error_check(setter(parent, value));
+	}
+
+	inline constexpr value_type operator()(CameraWidget *parent) const
+	requires(std::invocable<getter_func, CameraWidget *, value_type*>)
+	{
+		value_type value;
+		gp_error_check(getter(parent, &value));
+		return value;
+	}
+};
+
+template <typename MemberT, typename AccessorT>
+static inline constexpr void check_type(AccessorT)
+{
+	static_assert(std::is_same_v<typename AccessorT::value_type, MemberT>);
+};
+
+auto widget_base_members = std::make_tuple(accessor(identifier<"label">(), gp_widget_get_label),
+										   accessor(identifier<"name">(), gp_widget_get_name, gp_widget_set_name),
+										   accessor(identifier<"info">(), gp_widget_get_info, gp_widget_set_info),
+										   accessor(identifier<"id">(), gp_widget_get_id),
+										   accessor(identifier<"readonly">(), gp_widget_get_readonly, gp_widget_set_readonly),
+										   accessor(identifier<"changed">(), gp_widget_changed, gp_widget_set_changed));
 
 template <typename PropType>
 using WidgetGetter = int(CameraWidget *, PropType *);
@@ -164,6 +302,7 @@ struct gphoto_widget_common
 	static constexpr Fixed_String TypeString = TypeStr;
 	using Properties = typename tuple_cat<CommonProperties, OtherProperties>::type;
 	static constexpr std::size_t prop_count = std::tuple_size_v<Properties>;
+	using type = gphoto_widget_common;
 
 	Properties properties;
 
@@ -178,7 +317,6 @@ struct gphoto_widget_common
 };
 
 // static constexpr std::array AvailableWidgets = {GP_WIDGET_WINDOW, GP_WIDGET_SECTION, GP_WIDGET_TEXT, GP_WIDGET_RANGE, GP_WIDGET_TOGGLE, GP_WIDGET_RADIO, GP_WIDGET_MENU, GP_WIDGET_BUTTON, GP_WIDGET_DATE};
-
 template <CameraWidgetType WidgetType>
 struct gphoto_widget;
 /**< \brief Window widget*   This is the toplevel configuration widget. It should likely contain multiple #GP_WIDGET_SECTION entries. */
@@ -242,7 +380,7 @@ struct gphoto_widget<GP_WIDGET_DATE> :
 template <CameraWidgetType WidgetType>
 struct gphoto_widget_type_comparitor
 {
-	using Widget = gphoto_widget<WidgetType>;
+	using Widget = typename gphoto_widget<WidgetType>::type;
 
 	constexpr bool operator()(auto &formater, CameraWidgetType widgetType, CameraWidget *cameraWidget)
 	{
@@ -256,6 +394,7 @@ struct gphoto_widget_type_comparitor
 
 	constexpr void output(auto &formater, Widget widget)
 	{
+		formater << Widget::TypeString;
 		ouput(formater, widget.properties);
 	}
 
@@ -270,7 +409,6 @@ struct gphoto_widget_type_comparitor
 
 		if constexpr (currentLabel == std::string_view("info"))
 		{
-			formater << Widget::TypeString;
 		}
 
 		if constexpr (I + 1 < Widget::prop_count)
