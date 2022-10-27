@@ -21,28 +21,6 @@ void term(int signum)
 {
 	running = false;
 }
-
-int widget_writer(formater &_formater, CameraWidget *cameraWidget)
-{
-	auto line = _formater.get_line_formater();
-
-	gp_get_widget_type_and_data(line, cameraWidget);
-
-	int childCount = gp_widget_count_children(cameraWidget);
-	if (childCount > 0)
-	{
-		_formater.push_scope();
-		for (std::size_t i = 0; i < childCount; i++)
-		{
-			CameraWidget *child;
-			gp_widget_get_child(cameraWidget, i, &child);
-			widget_writer(_formater, child);
-		}
-		_formater.pop_scope();
-	}
-	return 0;
-}
-
 struct value_tester
 {
 	template <typename T, typename... ArgsT>
@@ -105,18 +83,16 @@ int main(int argc, char **argv)
 	if (gphoto.detectedCameras.size() > 0)
 	{
 		gphoto.openCamera(0, activeCamera);
-		std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
 
-		formater formater(widget_file);
 		CameraWidget *data;
 
 		activeCamera.getConfig(data);
-	
-		value_tester tester;
-		tupleForEach(tester, widget_base_members, data);
+		auto values = widget_base_members.get_members(data);
 
-		widget_writer(formater, data);
-		widget_file.close();
+		//	std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
+		//	formater formater(widget_file);
+		//	widget_writer(formater, data);
+		//	widget_file.close();
 	}
 	else
 	{
