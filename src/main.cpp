@@ -14,6 +14,8 @@
 #include <signal.h>
 #include <string>
 
+#include "format.h"
+
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
 bool running = true;
@@ -24,6 +26,9 @@ void term(int signum)
 
 int main(int argc, char **argv)
 {
+	format_test();
+	return -1;
+
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
 	action.sa_handler = term;
