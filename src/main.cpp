@@ -21,16 +21,6 @@ void term(int signum)
 {
 	running = false;
 }
-struct value_tester
-{
-	template <typename T, typename... ArgsT>
-	bool operator()(T &access_func, ArgsT&... Args)
-	//  requires(std::invocable)
-	{
-		const auto value = access_func(Args...);
-		return true;
-	}
-};
 
 int main(int argc, char **argv)
 {
@@ -82,12 +72,18 @@ int main(int argc, char **argv)
 	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
 	if (gphoto.detectedCameras.size() > 0)
 	{
-		gphoto.openCamera(0, activeCamera);
+		if (gphoto.openCamera(0, activeCamera) < GP_OK)
+		{
+			std::printf("Could Not open camera\n");
+			return -1;
+		}
 
 		CameraWidget *data;
-
 		activeCamera.getConfig(data);
-		auto values = widget_base_members.get_members(data);
+
+		camera_widget widget(data);
+
+		auto value = camera_widget_base_accessors().get_members(data);
 
 		//	std::ofstream widget_file("/home/threeddean/Documents/" + widgetFile, std::ios_base::trunc | std::ios_base::out);
 		//	formater formater(widget_file);
