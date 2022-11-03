@@ -2,6 +2,9 @@
 #include "Fixed_Array.h"
 #include <ctre.hpp>
 
+struct formatting_error
+{};
+
 // https://www.partow.net/programming/hashfunctions/
 
 constexpr uint32_t ELFHash(const char *str, unsigned int length)
@@ -55,97 +58,6 @@ constexpr size_t count_vars(std::string_view _str)
 	return count;
 }
 
-template <size_t N>
-struct formatted_string
-{
-	constexpr formatted_string() {}
-	std::array<std::string_view, N + 1> constants;
-	std::array<std::string_view, N> vars;
-};
-
-struct formatting_error
-{};
-
-template <size_t N>
-struct variable_str_constructor_helper : formatted_string<N>
-{
-	using formatted_string<N>::constants;
-	using formatted_string<N>::vars;
-
-	std::size_t current = 0;
-
-	constexpr variable_str_constructor_helper() {}
-
-	constexpr void set_constant(auto begin, auto end)
-	{
-		constants[current] = std::string_view(begin, end);
-	}
-	constexpr auto set_variable(std::string_view _str)
-	{
-		auto start = _str.begin();
-		if (start[0] == '$' && start[1] == '{' && start[2] != '}')
-		{
-			start = start + 2;
-		}
-
-		for (auto i = start; i < _str.end(); i++)
-		{
-			switch (*i)
-			{
-			case '$':
-			case '{':
-				throw formatting_error{};
-			case '}':
-				vars[current] = std::string_view(start, i);
-				current++;
-				return i;
-			}
-		}
-		throw formatting_error{};
-	}
-	constexpr void set_last_constant(auto end)
-	{
-		if (current == N)
-		{
-			set_constant(vars[N - 1].end() + 1, end);
-		}
-		else
-		{
-			throw formatting_error{};
-		}
-	}
-};
-
-template <size_t N>
-constexpr formatted_string<N> get_vars(const std::string_view _str)
-{
-	variable_str_constructor_helper<N> formatted_string;
-
-	std::size_t current = 0;
-	auto lastMatch = _str.begin();
-
-	for (auto i = _str.begin(); i < _str.end(); i++)
-	{
-		switch (*i)
-		{
-		case '$':
-			formatted_string.set_constant(lastMatch, i);
-			i = formatted_string.set_variable(std::string_view(i, _str.end()));
-			lastMatch = i + 1;
-			break;
-		case '{':
-		case '}':
-			throw formatting_error{};
-		}
-	}
-	if (_str.end() > lastMatch)
-	{
-		formatted_string.set_last_constant(_str.end());
-	}
-
-	return formatted_string;
-}
-
 enum format_type
 {
 	not_set,
@@ -174,7 +86,7 @@ struct var_type_pair
 	}
 };
 
-constexpr format_type get_type(std::string_view _str)
+constexpr format_type get_type_enum(std::string_view _str)
 {
 	std::array enum_array = {var_type_pair(format_type::String, "str"), var_type_pair(format_type::Integer, "int"), var_type_pair(format_type::Float, "float")};
 	format_type result = not_set;
@@ -188,15 +100,155 @@ constexpr format_type get_type(std::string_view _str)
 
 struct format_var
 {
-
 	using hash_t = size_t;
-	constexpr format_var() {}
-	format_var(std::string_view type, std::string_view label)
-		: type(get_type(type)), label(hash(label))
-	{}
+	constexpr format_var(){}
+
+	constexpr format_var(std::string_view str)
+	{
+		auto regex = ctre::match<"(.+):(.+)">;
+
+		auto [wholeMatch, var] = ctre::match<"\\$\\{(.+)\\}">(str);
+
+		if (var)
+		{
+			auto [whole, firstCap, secondCap] = regex(var);
+
+			if (whole)
+			{
+				type = get_type_enum(firstCap);
+				label = secondCap;
+			}
+			else
+			{
+				type = get_type_enum(std::string_view());
+				// format_type::not_set;
+				label = var;
+			}
+		}
+		else{
+			throw formatting_error{};
+		}
+	}
+
+	constexpr format_var(std::string_view _type, std::string_view _label) : type(get_type_enum(_type)), label(_label){}
+
 	format_type type;
-	hash_t label;
+	std::string_view label;
 };
+
+template <size_t N>
+struct formatted_string
+{
+	constexpr formatted_string() {}
+	std::array<std::string_view, N + 1> constants;
+	std::array<std::string_view, N> vars;
+};
+
+
+template <size_t N>
+struct variable_str_constructor_helper
+{
+	std::string_view str;
+	std::array<std::string_view, N> vars;
+	std::size_t current = 0;
+
+	constexpr variable_str_constructor_helper(std::string_view _str) : str(_str)
+	{
+		for (auto i = str.begin(); i < str.end(); i++)
+		{
+			switch (*i)
+			{
+			case '$':
+				i = set_variable(std::string_view(i, str.end()));
+				break;
+			case '{':
+			case '}':
+				throw formatting_error{};
+			}
+		}
+	}
+
+	constexpr auto set_variable(std::string_view _str)
+	{
+		auto start = _str.begin();
+
+		for (auto i = start; i < _str.end(); i++)
+		{
+			switch (*i)
+			{
+			case '$':
+			case '{':
+				break;
+			case '}':
+				vars[current] = std::string_view(start, i+1);
+				current++;
+				return i;
+			}
+		}
+		throw formatting_error{};
+	}
+
+	constexpr auto to_formatted_var(std::string_view str)
+	{
+		auto getVar = ctre::match<"\\$\\{(.+)\\}">;
+		auto regex = ctre::match<"(.+):(.+)">;
+
+		auto [wholeMatch, var] = getVar(str);
+
+		if (var)
+		{
+			auto [whole, firstCap, secondCap] = regex(str);
+
+			if (whole)
+			{
+				return format_var(firstCap, secondCap);
+			}
+			else
+			{
+				return format_var(std::string_view(), var);
+			}
+		}
+	}
+
+	constexpr auto get_var_array()
+	{
+		using var_array = std::array<format_var, N>;
+		using const_array = std::array<std::string_view, N+1>;
+
+		std::pair<var_array, const_array> output;
+
+		auto output_itt = output.first.begin();
+		auto constant_view_itt = output.second.begin();
+
+		auto constantStart = str.begin();
+
+		for(auto var : vars)
+		{
+			*output_itt = format_var(var);
+			*constant_view_itt = std::string_view(constantStart, var.begin());
+			constantStart = var.end();
+			output_itt++;
+			constant_view_itt++;
+		}
+		if(constantStart < str.end())
+		{
+			*constant_view_itt = std::string_view(constantStart, str.end());
+		}
+		return output;
+	}
+};
+
+template <size_t N>
+constexpr auto get_vars(const std::string_view _str)
+{
+	variable_str_constructor_helper<N> formatted_string(_str);
+	auto [var_data, str_data]= formatted_string.get_var_array();
+
+	//TODO count number of bytes required for new constant array
+	//TODO remove duplicate variables and replace them with a position arg
+
+	return str_data;
+}
 
 void format_test()
 {
@@ -204,25 +256,5 @@ void format_test()
 												  "<label for=${str:id}>${label}</label>"};
 
 	constexpr size_t var_estimate = count_vars(unprocessed_str);
-	formatted_string formater_str = get_vars<var_estimate>(unprocessed_str);
-	std::array<format_var, var_estimate> vars;
-
-	auto currentVar = vars.begin();
-	auto regex = ctre::match<"(.+):(.+)">;
-	auto hash = std::hash<std::string_view>{};
-	for (auto var : formater_str.vars)
-	{
-		auto [whole, firstCap, secondCap] = regex(var);
-
-		if (whole)
-		{
-			*currentVar = format_var{firstCap, secondCap};
-		}
-		else
-		{
-			*currentVar = format_var{std::string_view(), var};
-		}
-		++currentVar;
-	}
-	// TODO process variables to get their type and id
+	auto temp = get_vars<var_estimate>(unprocessed_str);
 }
