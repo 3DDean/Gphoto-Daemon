@@ -103,7 +103,7 @@ struct format_var
 {
 	using hash_t = size_t;
 
-	constexpr format_var(const format_var&) = default;
+	constexpr format_var(const format_var &) = default;
 
 	constexpr format_var() {}
 
@@ -134,7 +134,7 @@ struct format_var
 			throw formatting_error{};
 		}
 	}
-	bool operator==(const format_var& rhs) const 
+	bool operator==(const format_var &rhs) const
 	{
 		return type == rhs.type && label == rhs.label;
 	}
@@ -145,10 +145,10 @@ struct format_var
 	std::string_view label;
 };
 
-template<class Compare = std::less<>>
+template <class Compare = std::less<>>
 struct format_var_label_compare
 {
-	constexpr inline bool operator()(const format_var& lhs, const format_var& rhs)
+	constexpr inline bool operator()(const format_var &lhs, const format_var &rhs)
 	{
 		return Compare{}(lhs.label, rhs.label);
 	}
@@ -197,7 +197,7 @@ struct variable_str_constructor_helper
 			case '{':
 				break;
 			case '}':
-				vars[current] = std::string_view(start, i+1);
+				vars[current] = std::string_view(start, i + 1);
 				current++;
 				return i;
 			}
@@ -230,7 +230,7 @@ struct variable_str_constructor_helper
 	constexpr auto get_var_array()
 	{
 		using var_array = std::array<format_var, N>;
-		using const_array = std::array<std::string_view, N+1>;
+		using const_array = std::array<std::string_view, N + 1>;
 
 		std::pair<var_array, const_array> output;
 
@@ -239,7 +239,7 @@ struct variable_str_constructor_helper
 
 		auto constantStart = str.begin();
 
-		for(auto var : vars)
+		for (auto var : vars)
 		{
 			*output_itt = format_var(var);
 			*constant_view_itt = std::string_view(constantStart, var.begin());
@@ -247,7 +247,7 @@ struct variable_str_constructor_helper
 			output_itt++;
 			constant_view_itt++;
 		}
-		if(constantStart < str.end())
+		if (constantStart < str.end())
 		{
 			*constant_view_itt = std::string_view(constantStart, str.end());
 		}
@@ -264,17 +264,17 @@ struct ref_counter
 	using iterator = typename Array::iterator;
 	Array data;
 	size_t count = 0;
-	
+
 	iterator first = data.begin();
 	iterator last = data.begin();
 
 	struct internal_compare
 	{
-		constexpr inline bool operator()(const value_type& lhs, const Key& rhs)
+		constexpr inline bool operator()(const value_type &lhs, const Key &rhs)
 		{
 			return Compare{}(lhs.first, rhs);
 		}
-	};	
+	};
 	constexpr size_t size()
 	{
 		return last - data.begin();
@@ -293,7 +293,7 @@ struct ref_counter
 	constexpr void insert(Key &_str)
 	{
 		auto result = std::lower_bound(begin(), last, _str, internal_compare{});
-		
+
 		if (result == last)
 		{
 			*last = value_type{_str, 1};
@@ -301,8 +301,8 @@ struct ref_counter
 		}
 		else
 		{
-			//TODO move found behavior into template parameters
-			if((*result).first == _str)
+			// TODO move found behavior into template parameters
+			if ((*result).first == _str)
 			{
 				(*result).second++;
 				return;
