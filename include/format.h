@@ -154,12 +154,27 @@ struct format_var_label_compare
 	}
 };
 
-template <size_t N>
-struct formatted_string
+#include <variant>
+template <typename... Types>
+using variant_with_ref = std::variant<Types..., std::reference_wrapper<Types>...>;
+
+struct format_arg
 {
-	constexpr formatted_string() {}
-	std::array<std::string_view, N + 1> constants;
-	std::array<std::string_view, N> vars;
+	using var_variant = variant_with_ref<format_var, std::string_view>;
+	variant_with_ref<format_var, std::string_view> data;
+
+	template <typename T, typename... ArgsT>
+	inline constexpr auto emplace(ArgsT &&...Args)
+	{
+		data.emplace<T>(Args...);
+		data.index();
+	};
+
+	format_arg &operator=(const format_arg &other)
+	{
+		data = other.data;
+		return *this;
+	}
 };
 
 template <size_t N>
@@ -205,113 +220,99 @@ struct variable_str_constructor_helper
 		throw formatting_error{};
 	}
 
-	constexpr auto to_formatted_var(std::string_view str)
-	{
-		auto getVar = ctre::match<"\\$\\{(.+)\\}">;
-		auto regex = ctre::match<"(.+):(.+)">;
-
-		auto [wholeMatch, var] = getVar(str);
-
-		if (var)
-		{
-			auto [whole, firstCap, secondCap] = regex(str);
-
-			if (whole)
-			{
-				return format_var(firstCap, secondCap);
-			}
-			else
-			{
-				return format_var(std::string_view(), var);
-			}
-		}
-	}
-
 	constexpr auto get_var_array()
 	{
 		using var_array = std::array<format_var, N>;
 		using const_array = std::array<std::string_view, N + 1>;
+		std::array<format_arg, N + N + 1> args;
 
-		std::pair<var_array, const_array> output;
-
-		auto output_itt = output.first.begin();
-		auto constant_view_itt = output.second.begin();
+		auto output_itt = args.begin();
 
 		auto constantStart = str.begin();
 
 		for (auto var : vars)
 		{
-			*output_itt = format_var(var);
-			*constant_view_itt = std::string_view(constantStart, var.begin());
-			constantStart = var.end();
+			output_itt->template emplace<std::string_view>(constantStart, var.begin());
 			output_itt++;
-			constant_view_itt++;
+			output_itt->template emplace<format_var>(var);
+			output_itt++;
+
+			constantStart = var.end();
 		}
 		if (constantStart < str.end())
 		{
-			*constant_view_itt = std::string_view(constantStart, str.end());
+			output_itt->template emplace<std::string_view>(constantStart, str.end());
 		}
-		return output;
+		return args;
 	}
 };
 
 template <typename Key, typename T, std::size_t N, class Compare>
-struct ref_counter
+struct fixed_map
 {
 	using value_type = std::pair<Key, T>;
 
 	using Array = std::array<value_type, N>;
 	using iterator = typename Array::iterator;
-	Array data;
-	size_t count = 0;
 
-	iterator first = data.begin();
+  private:
+	Array data;
+
+	const iterator first = data.begin();
 	iterator last = data.begin();
 
 	struct internal_compare
 	{
-		constexpr inline bool operator()(const value_type &lhs, const Key &rhs)
-		{
-			return Compare{}(lhs.first, rhs);
-		}
+		constexpr inline bool operator()(const value_type &lhs, const Key &rhs) { return Compare{}(lhs.first, rhs); }
 	};
-	constexpr size_t size()
-	{
-		return last - data.begin();
-	}
 
-	constexpr auto begin()
-	{
-		return data.begin();
-	}
+  public:
+	constexpr size_t size() { return last - data.begin(); }
 
-	constexpr auto end()
-	{
-		return last;
-	}
+	constexpr auto begin() { return data.begin(); }
+	constexpr auto end() { return last; }
 
-	constexpr void insert(Key &_str)
-	{
-		auto result = std::lower_bound(begin(), last, _str, internal_compare{});
+	constexpr auto lower_bound(Key &_str) { return std::lower_bound(begin(), last, _str, internal_compare{}); }
 
-		if (result == last)
+	constexpr void insert(auto hint, Key &key, T value)
+	{
+		if (hint < data.end() && hint >= data.begin())
 		{
-			*last = value_type{_str, 1};
+			if (hint < last)
+			{
+				std::move_backward(hint, last, last + 1);
+			}
+			*hint = value_type{key, value};
 			last++;
 		}
 		else
 		{
-			// TODO move found behavior into template parameters
-			if ((*result).first == _str)
+			throw std::out_of_range("insert hint is not within the range of storage");
+		}
+	}
+};
+
+template <typename Key, std::size_t N, class Compare, typename T = uint32_t>
+struct ref_counter : fixed_map<Key, T, N, Compare>
+{
+	using base = fixed_map<Key, T, N, Compare>;
+	using base::end;
+	using base::insert;
+	using base::lower_bound;
+	using typename base::iterator;
+
+	ref_counter(auto &array)
+	{
+		for (auto var : array)
+		{
+			iterator itt = lower_bound(var);
+			if (itt != end() && var == (*itt).first)
 			{
-				(*result).second++;
-				return;
+				(*itt).second++;
 			}
 			else
 			{
-				std::move_backward(result, last, last + 1);
-				*result = value_type(_str, 1);
-				last++;
+				insert(itt, var, 1u);
 			}
 		}
 	}
@@ -321,20 +322,9 @@ template <size_t N>
 constexpr auto get_vars(const std::string_view _str)
 {
 	variable_str_constructor_helper<N> formatted_string(_str);
-	auto [var_data, str_data] = formatted_string.get_var_array();
 
-	using var_usage = std::pair<std::string_view, size_t>;
-
-	ref_counter<format_var, size_t, N, format_var_label_compare<>> refCounter;
-	for (auto var : var_data)
-	{
-		refCounter.insert(var);
-	}
-
-	// TODO count number of bytes required for new constant array
-	// TODO remove duplicate variables and replace them with a position arg
-
-	return str_data;
+	// TODO report std::variant  not working to Natvis
+	return formatted_string.get_var_array();
 }
 
 void format_test()
