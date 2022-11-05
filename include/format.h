@@ -163,6 +163,8 @@ struct format_arg
 	using var_variant = variant_with_ref<format_var, std::string_view>;
 	variant_with_ref<format_var, std::string_view> data;
 
+	constexpr format_arg() = default;
+
 	template <typename T, typename... ArgsT>
 	inline constexpr auto emplace(ArgsT &&...Args)
 	{
@@ -170,80 +172,10 @@ struct format_arg
 		data.index();
 	};
 
-	format_arg &operator=(const format_arg &other)
+	constexpr format_arg &operator=(const format_arg &other)
 	{
 		data = other.data;
 		return *this;
-	}
-};
-
-template <size_t N>
-struct variable_str_constructor_helper
-{
-	std::string_view str;
-	std::array<std::string_view, N> vars;
-	std::size_t current = 0;
-
-	constexpr variable_str_constructor_helper(std::string_view _str) : str(_str)
-	{
-		for (auto i = str.begin(); i < str.end(); i++)
-		{
-			switch (*i)
-			{
-			case '$':
-				i = set_variable(std::string_view(i, str.end()));
-				break;
-			case '{':
-			case '}':
-				throw formatting_error{};
-			}
-		}
-	}
-
-	constexpr auto set_variable(std::string_view _str)
-	{
-		auto start = _str.begin();
-
-		for (auto i = start; i < _str.end(); i++)
-		{
-			switch (*i)
-			{
-			case '$':
-			case '{':
-				break;
-			case '}':
-				vars[current] = std::string_view(start, i + 1);
-				current++;
-				return i;
-			}
-		}
-		throw formatting_error{};
-	}
-
-	constexpr auto get_var_array()
-	{
-		using var_array = std::array<format_var, N>;
-		using const_array = std::array<std::string_view, N + 1>;
-		std::array<format_arg, N + N + 1> args;
-
-		auto output_itt = args.begin();
-
-		auto constantStart = str.begin();
-
-		for (auto var : vars)
-		{
-			output_itt->template emplace<std::string_view>(constantStart, var.begin());
-			output_itt++;
-			output_itt->template emplace<format_var>(var);
-			output_itt++;
-
-			constantStart = var.end();
-		}
-		if (constantStart < str.end())
-		{
-			output_itt->template emplace<std::string_view>(constantStart, str.end());
-		}
-		return args;
 	}
 };
 
@@ -318,14 +250,77 @@ struct ref_counter : fixed_map<Key, T, N, Compare>
 	}
 };
 
-template <size_t N>
-constexpr auto get_vars(const std::string_view _str)
+template <std::size_t N>
+struct formatted_string
 {
-	variable_str_constructor_helper<N> formatted_string(_str);
+	std::array<format_arg, N> args;
+	formatted_string(const std::string_view _str)
+	{}
+};
 
-	// TODO report std::variant  not working to Natvis
-	return formatted_string.get_var_array();
-}
+template <Fixed_String Str>
+inline constexpr auto format_string()
+{
+	constexpr size_t var_estimate = count_vars(Str);
+	std::array<format_arg, var_estimate + var_estimate + 1> args;
+	
+	{
+		std::array<std::string_view, var_estimate> vars;
+		auto var_itt = vars.begin();
+		
+		auto set_variable = [&var_itt](const auto start, const auto end)
+		{
+			// auto start = _str.begin();
+
+			for (auto i = start; i < end; i++)
+			{
+				switch (*i)
+				{
+				case '$':
+				case '{':
+					break;
+				case '}':
+					*var_itt = std::string_view(start, i + 1);
+					var_itt++;
+					return i;
+				}
+			}
+			throw formatting_error{};
+		};
+
+		std::string_view str(Str);
+		for (auto i = str.begin(); i < str.end(); i++)
+		{
+			switch (*i)
+			{
+			case '$':
+				i = set_variable(i, str.end());
+				break;
+			case '{':
+			case '}':
+				throw formatting_error{};
+			}
+		}
+		auto output_itt = args.begin();
+		auto constantStart = str.begin();
+
+		for (auto var : vars)
+		{
+			output_itt->template emplace<std::string_view>(constantStart, var.begin());
+			output_itt++;
+			output_itt->template emplace<format_var>(var);
+			output_itt++;
+
+			constantStart = var.end();
+		}
+		if (constantStart < str.end())
+		{
+			output_itt->template emplace<std::string_view>(constantStart, str.end());
+		}
+	}
+
+	return args;
+};
 
 void format_test()
 {
@@ -333,5 +328,7 @@ void format_test()
 												  "<label for=${str:id}>${label}</label>"};
 
 	constexpr size_t var_estimate = count_vars(unprocessed_str);
-	auto temp = get_vars<var_estimate>(unprocessed_str);
+
+	auto formatted_string = format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
+																 "<label for=${str:id}>${label}</label>"}>();
 }
