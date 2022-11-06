@@ -90,6 +90,7 @@ static constexpr auto MergeFixedStr(Args &&..._tkn)
 	constexpr std::size_t size = output.Size - 2;
 	return output;
 }
+
 template <std::size_t N>
 struct Fixed_String : Fixed_Array_Base<char, N>
 {
@@ -98,6 +99,7 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 
 	constexpr Fixed_String(const char (&src)[N])
 		: Array(src) {}
+		
 	constexpr Fixed_String(const Fixed_Array<char, N> &src)
 		: Array(src) {}
 
@@ -107,6 +109,7 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 		copy(Array::data, Args...);
 	}
 
+	//TODO create copy error for incorrect size
 	template <size_t SrcN, typename... ArgsT>
 	inline static constexpr void copy(auto _dst, const Fixed_String<SrcN> &_src, const ArgsT &...Args)
 	{
@@ -121,6 +124,15 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 
 	constexpr operator std::string_view() const noexcept { return std::string_view{Array::data}; }
 
+	constexpr auto end() const
+	{
+		return std::string_view{Array::data}.end();
+	}
+
+	constexpr auto begin() const
+	{
+		return std::string_view{Array::data}.begin();
+	}
 	// constexpr operator ctll::fixed_string<N - 1>() const noexcept
 	// {
 	// 	return ctll::fixed_string(Array::data);

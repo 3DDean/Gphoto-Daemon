@@ -103,9 +103,8 @@ struct format_var
 {
 	using hash_t = size_t;
 
-	constexpr format_var(const format_var &) = default;
-
 	constexpr format_var() {}
+	constexpr format_var(const format_var &) = default;
 
 	constexpr format_var(std::string_view str)
 	{
@@ -125,7 +124,6 @@ struct format_var
 			else
 			{
 				type = get_type_enum(std::string_view());
-				// format_type::not_set;
 				label = var;
 			}
 		}
@@ -134,10 +132,12 @@ struct format_var
 			throw formatting_error{};
 		}
 	}
+
 	bool operator==(const format_var &rhs) const
 	{
 		return type == rhs.type && label == rhs.label;
 	}
+
 	constexpr format_var(std::string_view _type, std::string_view _label)
 		: type(get_type_enum(_type)), label(_label) {}
 
@@ -160,8 +160,8 @@ using variant_with_ref = std::variant<Types..., std::reference_wrapper<Types>...
 
 struct format_arg
 {
-	using var_variant = variant_with_ref<format_var, std::string_view>;
-	variant_with_ref<format_var, std::string_view> data;
+	using variant = std::variant<format_var, std::string_view>;
+	variant data;
 
 	constexpr format_arg() = default;
 
@@ -176,6 +176,11 @@ struct format_arg
 	{
 		data = other.data;
 		return *this;
+	}
+
+	constexpr operator variant()
+	{
+		return data;
 	}
 };
 
@@ -258,69 +263,92 @@ struct formatted_string
 	{}
 };
 
-template <Fixed_String Str>
-inline constexpr auto format_string()
+static inline constexpr auto process_arg(format_var &var, auto &&iterator)
 {
-	constexpr size_t var_estimate = count_vars(Str);
-	std::array<format_arg, var_estimate + var_estimate + 1> args;
-	
+	if (var.type == format_type::String)
 	{
-		std::array<std::string_view, var_estimate> vars;
-		auto var_itt = vars.begin();
-		
-		auto set_variable = [&var_itt](const auto start, const auto end)
-		{
-			// auto start = _str.begin();
+		(*(iterator - 1))++;
+		(*(iterator + 1))++;
+	}
+};
 
-			for (auto i = start; i < end; i++)
-			{
-				switch (*i)
-				{
-				case '$':
-				case '{':
-					break;
-				case '}':
-					*var_itt = std::string_view(start, i + 1);
-					var_itt++;
-					return i;
-				}
-			}
-			throw formatting_error{};
-		};
+static inline constexpr auto process_arg(std::string_view &var, auto &iterator)
+{
+	*iterator += var.size();
+};
 
-		std::string_view str(Str);
-		for (auto i = str.begin(); i < str.end(); i++)
+template <size_t N>
+struct format_string_data
+{
+	std::array<format_arg, N> args;
+	std::array<size_t, N> arg_str_sizes;
+};
+
+template <Fixed_String Str>
+constexpr auto format_string()
+{
+	constexpr size_t arg_count = count_vars(Str) * 2 + 1;
+	format_string_data<arg_count> output;
+
+	auto &args = output.args;
+	auto &arg_str_sizes = output.arg_str_sizes;
+
+	auto const_start = Str.begin();
+	auto arg_itt = args.begin();
+
+	auto set_variable = [&arg_itt, &const_start](const auto start, const auto end)
+	{
+		for (auto i = start; i < end; i++)
 		{
 			switch (*i)
 			{
 			case '$':
-				i = set_variable(i, str.end());
-				break;
 			case '{':
+				break;
 			case '}':
-				throw formatting_error{};
+				arg_itt++->template emplace<std::string_view>(const_start, start);
+				const_start = i + 1;
+
+				arg_itt++->template emplace<format_var>(std::string_view(start, const_start));
+				return i;
 			}
 		}
-		auto output_itt = args.begin();
-		auto constantStart = str.begin();
+		throw formatting_error{};
+	};
 
-		for (auto var : vars)
+	for (auto i = Str.begin(); i < Str.end(); i++)
+	{
+		switch (*i)
 		{
-			output_itt->template emplace<std::string_view>(constantStart, var.begin());
-			output_itt++;
-			output_itt->template emplace<format_var>(var);
-			output_itt++;
-
-			constantStart = var.end();
-		}
-		if (constantStart < str.end())
-		{
-			output_itt->template emplace<std::string_view>(constantStart, str.end());
+		case '$':
+			i = set_variable(i, Str.end());
+			break;
+		case '{':
+		case '}':
+			throw formatting_error{};
 		}
 	}
 
-	return args;
-};
+	if (const_start < Str.end())
+		arg_itt->template emplace<std::string_view>(const_start, Str.end());
+
+	std::fill(arg_str_sizes.begin(), arg_str_sizes.end(), 0);
+
+	arg_itt = args.begin();
+	auto size_itt = arg_str_sizes.begin();
+
+	do
+	{
+		std::visit<void>([size_itt](auto &&arg)
+						 { process_arg(arg, size_itt); },
+						 arg_itt->data);
+
+		arg_itt++;
+		size_itt++;
+	} while (arg_itt < args.end());
+
+	return arg_str_sizes;
+}
 
 void format_test()
 {
@@ -330,5 +358,5 @@ void format_test()
 	constexpr size_t var_estimate = count_vars(unprocessed_str);
 
 	auto formatted_string = format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
-																 "<label for=${str:id}>${label}</label>"}>();
+													   "<label for=${str:id}>${label}</label>"}>();
 }
