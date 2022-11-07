@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <string_view>
+#include "hash.h"
 // #include <ctll/fixed_string.hpp>
 
 // TODO look into replacing Fixed_Array with std::array
@@ -94,12 +95,15 @@ static constexpr auto MergeFixedStr(Args &&..._tkn)
 template <std::size_t N>
 struct Fixed_String : Fixed_Array_Base<char, N>
 {
+
   public:
+	using iterator = std::string_view::iterator;
+	
 	using Array = Fixed_Array_Base<char, N>;
 
 	constexpr Fixed_String(const char (&src)[N])
 		: Array(src) {}
-		
+
 	constexpr Fixed_String(const Fixed_Array<char, N> &src)
 		: Array(src) {}
 
@@ -109,7 +113,7 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 		copy(Array::data, Args...);
 	}
 
-	//TODO create copy error for incorrect size
+	// TODO create copy error for incorrect size
 	template <size_t SrcN, typename... ArgsT>
 	inline static constexpr void copy(auto _dst, const Fixed_String<SrcN> &_src, const ArgsT &...Args)
 	{
@@ -122,17 +126,15 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 	}
 	inline static constexpr void copy(const char *_dst) {}
 
-	constexpr operator std::string_view() const noexcept { return std::string_view{Array::data}; }
+	constexpr std::string_view to_string_view() const noexcept { return std::string_view{Array::data};	}
+	constexpr const char* to_char_ptr() const noexcept { return Array::data;	}
 
-	constexpr auto end() const
-	{
-		return std::string_view{Array::data}.end();
-	}
+	constexpr operator std::string_view() const noexcept { return to_string_view(); }
+	constexpr operator const char*() const noexcept { return to_char_ptr(); }
 
-	constexpr auto begin() const
-	{
-		return std::string_view{Array::data}.begin();
-	}
+	constexpr iterator end() const noexcept	{ return to_string_view().end();	}
+	constexpr iterator begin() const noexcept { return to_string_view().begin();	}
+
 	// constexpr operator ctll::fixed_string<N - 1>() const noexcept
 	// {
 	// 	return ctll::fixed_string(Array::data);
@@ -150,6 +152,11 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 			return true;
 		}
 		return false;
+	}
+
+	constexpr auto hash()
+	{
+		return ELFHash(Array::data, N);
 	}
 };
 

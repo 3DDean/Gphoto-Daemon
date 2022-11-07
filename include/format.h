@@ -1,48 +1,22 @@
 #pragma once
 #include "Fixed_Array.h"
+#include <cassert>
 #include <ctre.hpp>
+#include <variant>
 
 struct formatting_error
 {};
 
-// https://www.partow.net/programming/hashfunctions/
-constexpr uint32_t ELFHash(const char *str, unsigned int length)
+template <Fixed_String ErrorStr>
+class version_error : std::exception
 {
-	unsigned int hash = 0;
-	unsigned int x = 0;
-	unsigned int i = 0;
+  public:
+	constexpr version_error() = default;
 
-	for (i = 0; i < length; ++str, ++i)
+	virtual constexpr const char *what() const noexcept
 	{
-		hash = (hash << 4) + (*str);
-
-		if ((x = hash & 0xF0000000L) != 0)
-		{
-			hash ^= (x >> 24);
-		}
-
-		hash &= ~x;
+		return ErrorStr;
 	}
-
-	return hash;
-}
-
-// Not using the hash functions because I don't think my approach is really working
-template <typename T>
-struct hash
-{
-	using hash_t = uint32_t;
-
-	constexpr hash(T &obj)
-		// I think this is just hashing the
-		: hash_code(ELFHash((char *)&obj, sizeof(T)))
-	{}
-
-	constexpr operator hash_t()
-	{
-		return hash_code;
-	}
-	hash_t hash_code;
 };
 
 constexpr size_t count_vars(std::string_view _str)
@@ -67,42 +41,64 @@ enum format_type
 	Float
 };
 
-struct var_type_pair
+struct constant_string : public std::string_view
 {
-	constexpr var_type_pair(format_type value, std::string_view _view)
-		: enum_value(value), view(_view)
-	{}
+	using base = std::string_view;
+	using base::begin;
 
-	format_type enum_value;
-	std::string_view view;
+	constexpr constant_string() = default;
+	constexpr constant_string(auto str)
+		: std::string_view(str) {}
+};
 
-	constexpr bool compare(std::string_view _str, format_type &_output)
-	{
-		if (_str == view)
-		{
-			_output = enum_value;
-			return true;
-		}
-		return false;
-	}
+struct str_var : public std::string_view
+{
+	using base = std::string_view;
+	using base::begin;
+	constexpr str_var() = default;
+	constexpr str_var(auto str)
+		: std::string_view(str) {}
+};
+struct unspecified_var : public std::string_view
+{
+	using base = std::string_view;
+	using base::begin;
+	constexpr unspecified_var() = default;
+	constexpr unspecified_var(auto str)
+		: std::string_view(str) {}
+};
+
+struct int_var : public std::string_view
+{
+	using base = std::string_view;
+	using base::begin;
+	constexpr int_var() = default;
+	constexpr int_var(auto str)
+		: std::string_view(str) {}
+};
+
+struct float_var : public std::string_view
+{
+	using base = std::string_view;
+	using base::begin;
+	constexpr float_var() = default;
+	constexpr float_var(auto str)
+		: std::string_view(str) {}
 };
 
 constexpr format_type get_type_enum(std::string_view _str)
 {
-	std::array enum_array = {var_type_pair(format_type::String, "str"), var_type_pair(format_type::Integer, "int"), var_type_pair(format_type::Float, "float")};
-	format_type result = not_set;
+	const std::array enum_array = {std::pair("str", format_type::String), std::pair("int", format_type::Integer), std::pair("float", format_type::Float)};
 
 	for (auto var : enum_array)
-		if (var.compare(_str, result))
-			break;
+		if (var.first == _str)
+			return var.second;
 
-	return result;
+	return format_type::not_set;
 };
 
 struct format_var
 {
-	using hash_t = size_t;
-
 	constexpr format_var() {}
 	constexpr format_var(const format_var &) = default;
 
@@ -154,105 +150,69 @@ struct format_var_label_compare
 	}
 };
 
-#include <variant>
 template <typename... Types>
 using variant_with_ref = std::variant<Types..., std::reference_wrapper<Types>...>;
 
-struct format_arg
+using format_arg_variant = std::variant<constant_string, unspecified_var, str_var, int_var, float_var>;
+
+struct format_arg : format_arg_variant
 {
-	using variant = std::variant<format_var, std::string_view>;
-	variant data;
+	using base = format_arg_variant;
+	using base::operator=;
+
+	using base::emplace;
+	using base::swap;
+
+	using base::index;
+	using base::valueless_by_exception;
 
 	constexpr format_arg() = default;
 
 	template <typename T, typename... ArgsT>
 	inline constexpr auto emplace(ArgsT &&...Args)
 	{
-		data.emplace<T>(Args...);
-		data.index();
+		if constexpr (__cpp_lib_variant >= 202106L)
+			base::template emplace<T>(Args...);
+		else
+			base::operator=(base(std::in_place_type<T>, std::forward<ArgsT>(Args)...));
 	};
 
-	constexpr format_arg &operator=(const format_arg &other)
+	template <typename Itt, typename End>
+	inline constexpr auto parse_arg(Itt start, End end)
 	{
-		data = other.data;
-		return *this;
-	}
+		std::string_view str(start, end);
+		auto regex = ctre::match<"(.+):(.+)">;
+		auto [wholeMatch, var] = ctre::match<"\\$\\{(.+)\\}">(str);
 
-	constexpr operator variant()
-	{
-		return data;
-	}
-};
-
-template <typename Key, typename T, std::size_t N, class Compare>
-struct fixed_map
-{
-	using value_type = std::pair<Key, T>;
-
-	using Array = std::array<value_type, N>;
-	using iterator = typename Array::iterator;
-
-  private:
-	Array data;
-
-	const iterator first = data.begin();
-	iterator last = data.begin();
-
-	struct internal_compare
-	{
-		constexpr inline bool operator()(const value_type &lhs, const Key &rhs) { return Compare{}(lhs.first, rhs); }
-	};
-
-  public:
-	constexpr size_t size() { return last - data.begin(); }
-
-	constexpr auto begin() { return data.begin(); }
-	constexpr auto end() { return last; }
-
-	constexpr auto lower_bound(Key &_str) { return std::lower_bound(begin(), last, _str, internal_compare{}); }
-
-	constexpr void insert(auto hint, Key &key, T value)
-	{
-		if (hint < data.end() && hint >= data.begin())
+		if (var)
 		{
-			if (hint < last)
+			auto [whole, firstCap, secondCap] = regex(var);
+
+			if (whole)
 			{
-				std::move_backward(hint, last, last + 1);
+				if (firstCap == "str")
+				{
+					emplace<str_var>(secondCap);
+				}
+				else if (firstCap == "int")
+				{
+					emplace<int_var>(secondCap);
+				}
+				else if (firstCap == "float")
+				{
+					emplace<float_var>(secondCap);
+				}
+
+				return;
 			}
-			*hint = value_type{key, value};
-			last++;
+
+			emplace<unspecified_var>(var);
 		}
 		else
 		{
-			throw std::out_of_range("insert hint is not within the range of storage");
+			emplace<constant_string>(str);
 		}
-	}
-};
-
-template <typename Key, std::size_t N, class Compare, typename T = uint32_t>
-struct ref_counter : fixed_map<Key, T, N, Compare>
-{
-	using base = fixed_map<Key, T, N, Compare>;
-	using base::end;
-	using base::insert;
-	using base::lower_bound;
-	using typename base::iterator;
-
-	ref_counter(auto &array)
-	{
-		for (auto var : array)
-		{
-			iterator itt = lower_bound(var);
-			if (itt != end() && var == (*itt).first)
-			{
-				(*itt).second++;
-			}
-			else
-			{
-				insert(itt, var, 1u);
-			}
-		}
-	}
+	};
 };
 
 template <std::size_t N>
@@ -263,100 +223,71 @@ struct formatted_string
 	{}
 };
 
-static inline constexpr auto process_arg(format_var &var, auto &&iterator)
-{
-	if (var.type == format_type::String)
-	{
-		(*(iterator - 1))++;
-		(*(iterator + 1))++;
-	}
-};
-
-static inline constexpr auto process_arg(std::string_view &var, auto &iterator)
-{
-	*iterator += var.size();
-};
-
 template <size_t N>
 struct format_string_data
 {
 	std::array<format_arg, N> args;
-	std::array<size_t, N> arg_str_sizes;
-};
 
-template <Fixed_String Str>
-constexpr auto format_string()
-{
-	constexpr size_t arg_count = count_vars(Str) * 2 + 1;
-	format_string_data<arg_count> output;
-
-	auto &args = output.args;
-	auto &arg_str_sizes = output.arg_str_sizes;
-
-	auto const_start = Str.begin();
-	auto arg_itt = args.begin();
-
-	auto set_variable = [&arg_itt, &const_start](const auto start, const auto end)
+	template <size_t StrN>
+	constexpr format_string_data(const Fixed_String<StrN> &Str)
 	{
-		for (auto i = start; i < end; i++)
+		using itterator = std::string_view::iterator;
+		itterator const_start = Str.begin();
+		auto arg_itt = args.begin();
+
+		auto set_variable = [&arg_itt, &const_start](auto start, const auto end)
+		{
+			for (auto i = start; i < end; i++)
+			{
+				switch (*i)
+				{
+				case '$':
+				case '{':
+					break;
+				case '}':
+					arg_itt++->parse_arg(const_start, start);
+
+					const_start = i + 1;
+
+					arg_itt++->parse_arg(start, const_start);
+
+					return i;
+				}
+			}
+			throw formatting_error{};
+		};
+
+		for (auto i = Str.begin(); i < Str.end(); i++)
 		{
 			switch (*i)
 			{
 			case '$':
-			case '{':
+				i = set_variable(i, Str.end());
 				break;
+			case '{':
 			case '}':
-				arg_itt++->template emplace<std::string_view>(const_start, start);
-				const_start = i + 1;
-
-				arg_itt++->template emplace<format_var>(std::string_view(start, const_start));
-				return i;
+				throw formatting_error{};
 			}
 		}
-		throw formatting_error{};
-	};
 
-	for (auto i = Str.begin(); i < Str.end(); i++)
-	{
-		switch (*i)
-		{
-		case '$':
-			i = set_variable(i, Str.end());
-			break;
-		case '{':
-		case '}':
-			throw formatting_error{};
-		}
+		if (const_start < Str.end())
+			arg_itt->parse_arg(const_start, Str.end());
 	}
+};
 
-	if (const_start < Str.end())
-		arg_itt->template emplace<std::string_view>(const_start, Str.end());
+// TODO add this to html elements and figure out the deduction crap
+// Todo convert this to a class
+template <Fixed_String Str>
+constexpr auto format_string()
+{
+	constexpr size_t arg_count = count_vars(Str) * 2 + 1;
+	constexpr format_string_data<arg_count> output(Str);
 
-	std::fill(arg_str_sizes.begin(), arg_str_sizes.end(), 0);
-
-	arg_itt = args.begin();
-	auto size_itt = arg_str_sizes.begin();
-
-	do
-	{
-		std::visit<void>([size_itt](auto &&arg)
-						 { process_arg(arg, size_itt); },
-						 arg_itt->data);
-
-		arg_itt++;
-		size_itt++;
-	} while (arg_itt < args.end());
-
-	return arg_str_sizes;
+	return output;
 }
 
 void format_test()
 {
-	static constexpr Fixed_String unprocessed_str{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
-												  "<label for=${str:id}>${label}</label>"};
-
-	constexpr size_t var_estimate = count_vars(unprocessed_str);
-
-	auto formatted_string = format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
-													   "<label for=${str:id}>${label}</label>"}>();
+	constexpr auto formatted_string = format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
+																 "<label for=${str:id}>${label}</label>"}>();
 }
