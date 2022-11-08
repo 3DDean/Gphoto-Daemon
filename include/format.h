@@ -5,7 +5,9 @@
 #include <variant>
 
 struct formatting_error
-{};
+{
+	constexpr formatting_error(std::string_view _error, std::string_view str){}
+};
 
 template <Fixed_String ErrorStr>
 class version_error : std::exception
@@ -24,22 +26,11 @@ constexpr size_t count_vars(std::string_view _str)
 	std::size_t count = 0;
 
 	for (auto i = _str.begin(); i < _str.end(); i++)
-	{
 		if (*i == '$')
-		{
 			count++;
-		}
-	}
+
 	return count;
 }
-
-enum format_type
-{
-	not_set,
-	String,
-	Integer,
-	Float
-};
 
 struct constant_string : public std::string_view
 {
@@ -86,72 +77,8 @@ struct float_var : public std::string_view
 		: std::string_view(str) {}
 };
 
-constexpr format_type get_type_enum(std::string_view _str)
-{
-	const std::array enum_array = {std::pair("str", format_type::String), std::pair("int", format_type::Integer), std::pair("float", format_type::Float)};
-
-	for (auto var : enum_array)
-		if (var.first == _str)
-			return var.second;
-
-	return format_type::not_set;
-};
-
-struct format_var
-{
-	constexpr format_var() {}
-	constexpr format_var(const format_var &) = default;
-
-	constexpr format_var(std::string_view str)
-	{
-		auto regex = ctre::match<"(.+):(.+)">;
-
-		auto [wholeMatch, var] = ctre::match<"\\$\\{(.+)\\}">(str);
-
-		if (var)
-		{
-			auto [whole, firstCap, secondCap] = regex(var);
-
-			if (whole)
-			{
-				type = get_type_enum(firstCap);
-				label = secondCap;
-			}
-			else
-			{
-				type = get_type_enum(std::string_view());
-				label = var;
-			}
-		}
-		else
-		{
-			throw formatting_error{};
-		}
-	}
-
-	bool operator==(const format_var &rhs) const
-	{
-		return type == rhs.type && label == rhs.label;
-	}
-
-	constexpr format_var(std::string_view _type, std::string_view _label)
-		: type(get_type_enum(_type)), label(_label) {}
-
-	format_type type;
-	std::string_view label;
-};
-
-template <class Compare = std::less<>>
-struct format_var_label_compare
-{
-	constexpr inline bool operator()(const format_var &lhs, const format_var &rhs)
-	{
-		return Compare{}(lhs.label, rhs.label);
-	}
-};
-
-template <typename... Types>
-using variant_with_ref = std::variant<Types..., std::reference_wrapper<Types>...>;
+struct placeholder
+{};
 
 using format_arg_variant = std::variant<constant_string, unspecified_var, str_var, int_var, float_var>;
 
@@ -159,12 +86,8 @@ struct format_arg : format_arg_variant
 {
 	using base = format_arg_variant;
 	using base::operator=;
-
 	using base::emplace;
-	using base::swap;
-
-	using base::index;
-	using base::valueless_by_exception;
+	static constexpr Fixed_String variable_regex = "\\$\\{(.+?)\\}";
 
 	constexpr format_arg() = default;
 
@@ -181,113 +104,110 @@ struct format_arg : format_arg_variant
 	inline constexpr auto parse_arg(Itt start, End end)
 	{
 		std::string_view str(start, end);
-		auto regex = ctre::match<"(.+):(.+)">;
-		auto [wholeMatch, var] = ctre::match<"\\$\\{(.+)\\}">(str);
 
-		if (var)
-		{
-			auto [whole, firstCap, secondCap] = regex(var);
+		if (ctre::match<variable_regex>(str))
+			throw formatting_error("constant_string contains variable ", str);
 
-			if (whole)
-			{
-				if (firstCap == "str")
-				{
-					emplace<str_var>(secondCap);
-				}
-				else if (firstCap == "int")
-				{
-					emplace<int_var>(secondCap);
-				}
-				else if (firstCap == "float")
-				{
-					emplace<float_var>(secondCap);
-				}
+		emplace<constant_string>(str);
+	};
 
-				return;
-			}
+	inline constexpr auto parse_arg(std::string_view var)
+	{
+		auto [whole, firstCap, secondCap] = ctre::match<"(.+):(.+)">(var);
 
-			emplace<unspecified_var>(var);
-		}
+		if (firstCap == "str")
+			emplace<str_var>(secondCap);
+		else if (firstCap == "int")
+			emplace<int_var>(secondCap);
+		else if (firstCap == "float")
+			emplace<float_var>(secondCap);
 		else
-		{
-			emplace<constant_string>(str);
-		}
+			emplace<unspecified_var>(var);
 	};
 };
 
 template <std::size_t N>
-struct formatted_string
+struct format_args
 {
-	std::array<format_arg, N> args;
-	formatted_string(const std::string_view _str)
-	{}
+	constexpr format_args() = default;
+	static constexpr std::size_t var_count = N;
+	static constexpr std::size_t arg_count = var_count * 2 + 1;
+
+	using arg_array = std::array<format_arg, arg_count>;
+	using var_array = std::array<std::size_t, var_count>;
+
+	arg_array args; // = parse_string<arg_count>(Str);
+	var_array vars; // = process_vars<var_count>(args);
+	//Move parse_string and process_vars
 };
 
 template <size_t N>
-struct format_string_data
+static inline constexpr auto process_vars(auto &args)
 {
-	std::array<format_arg, N> args;
+	std::array<std::size_t, N> vars;
 
-	template <size_t StrN>
-	constexpr format_string_data(const Fixed_String<StrN> &Str)
+	auto var_itt = vars.begin();
+
+	for (auto arg_itt = args.begin(); arg_itt < args.end(); arg_itt++)
 	{
-		using itterator = std::string_view::iterator;
-		itterator const_start = Str.begin();
-		auto arg_itt = args.begin();
-
-		auto set_variable = [&arg_itt, &const_start](auto start, const auto end)
+		if (arg_itt->index() != 0)
 		{
-			for (auto i = start; i < end; i++)
-			{
-				switch (*i)
-				{
-				case '$':
-				case '{':
-					break;
-				case '}':
-					arg_itt++->parse_arg(const_start, start);
-
-					const_start = i + 1;
-
-					arg_itt++->parse_arg(start, const_start);
-
-					return i;
-				}
-			}
-			throw formatting_error{};
-		};
-
-		for (auto i = Str.begin(); i < Str.end(); i++)
-		{
-			switch (*i)
-			{
-			case '$':
-				i = set_variable(i, Str.end());
-				break;
-			case '{':
-			case '}':
-				throw formatting_error{};
-			}
+			*var_itt = args.end() - arg_itt;
+			var_itt++;
 		}
-
-		if (const_start < Str.end())
-			arg_itt->parse_arg(const_start, Str.end());
 	}
+	return vars;
+}
+
+template <size_t N>
+static inline constexpr auto parse_string(const auto &Str)
+{
+	format_args<N> fmt_args;
+
+	auto &args = fmt_args.args;
+
+	using iterator = std::string_view::iterator;
+	iterator const_start = Str.begin();
+	auto arg_itt = args.begin();
+
+	for (auto [match, var] : ctre::range<format_arg::variable_regex.data>(Str))
+	{
+		arg_itt++->parse_arg(const_start, match.begin());
+		const_start = match.end();
+		arg_itt++->parse_arg(var);
+	}
+
+	if (const_start < Str.end())
+		arg_itt->parse_arg(const_start, Str.end());
+
+	fmt_args.vars = process_vars<N>(fmt_args.args);
+
+	return fmt_args;
 };
 
-// TODO add this to html elements and figure out the deduction crap
-// Todo convert this to a class
-template <Fixed_String Str>
-constexpr auto format_string()
-{
-	constexpr size_t arg_count = count_vars(Str) * 2 + 1;
-	constexpr format_string_data<arg_count> output(Str);
+template <auto... Args>
+struct format_string;
 
-	return output;
-}
+template <Fixed_String Str>
+struct format_string<Str>
+{
+	static constexpr Fixed_String str = Str;
+	static constexpr format_args args = parse_string<count_vars(str)>(Str);
+
+	//unfinalized call 
+	constexpr auto operator()(auto... Args) const requires(sizeof...(Args) == args.var_count)
+	{}
+};
+
+template <format_string Format_String, auto... Args>
+struct format_string<Format_String, Args...>
+{
+	static constexpr format_args args = Format_String.args;
+};
 
 void format_test()
 {
-	constexpr auto formatted_string = format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
-																 "<label for=${str:id}>${label}</label>"}>();
+	constexpr format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
+										 "<label for=${str:id}>${label}</label>"}>
+		test;
 }

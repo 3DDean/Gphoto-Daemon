@@ -4,7 +4,10 @@
 #include <cstddef>
 #include <string_view>
 #include "hash.h"
-// #include <ctll/fixed_string.hpp>
+
+#if __has_include("ctre.hpp")
+	#include "ctre.hpp"
+#endif
 
 // TODO look into replacing Fixed_Array with std::array
 template <typename T, std::size_t N>
@@ -38,6 +41,11 @@ class Fixed_Array_Base
 	inline static constexpr void copy(const T *_dst) {}
 
 	constexpr T &operator[](std::size_t _index) { return data[_index]; }
+
+	constexpr std::size_t size() const noexcept
+	{
+		return N;
+	}
 };
 
 template <typename T, std::size_t N>
@@ -53,49 +61,42 @@ struct Fixed_Array : Fixed_Array_Base<T, N>
 		: Fixed_Array_Base<T, N>(Args...)
 	{}
 };
-
-template <typename ArrT>
-class Array_Metadata;
-
-template <typename ArrT>
-using Array_Type = typename Array_Metadata<ArrT>::type;
-
-template <typename... ArrT>
-constexpr size_t Array_Sum()
-{
-	return (Array_Metadata<ArrT>::size + ...);
-}
-
-template <typename T, typename... ArgsT>
-Fixed_Array(const T &, const ArgsT &...) -> Fixed_Array<Array_Type<T>, Array_Sum<T, ArgsT...>()>;
-
 template <typename T, std::size_t N>
-struct Array_Metadata_Base
+struct Array_Wrapper_Base
 {
 	static constexpr size_t size = N;
 	using type = T;
 };
 
-template <typename T, std::size_t N>
-struct Array_Metadata<T[N]> : Array_Metadata_Base<T, N>
-{};
+//Figure out if I can remove this for something in the standard libary
+template<typename T>
+struct Array_Wrapper;
 
-template <typename T, std::size_t N>
-struct Array_Metadata<Fixed_Array<T, N>> : Array_Metadata_Base<T, N>
-{};
-
-template <typename... Args>
-static constexpr auto MergeFixedStr(Args &&..._tkn)
+template <typename... ArrT> 
+constexpr size_t Array_Sum()
 {
-	Fixed_Array output(_tkn...);
-	constexpr std::size_t size = output.Size - 2;
-	return output;
+	return (Array_Wrapper<ArrT>::size + ...);
 }
 
-template <std::size_t N>
+// template <typename T, typename... ArgsT>
+// Fixed_Array(const T &, const ArgsT &...) -> Fixed_Array<Array_Type<T>, Array_Sum<T, ArgsT...>()>;
+
+template <typename T, std::size_t N>
+struct Array_Wrapper<T[N]> : Array_Wrapper_Base<T, N>
+{};
+
+template <typename T, std::size_t N>
+struct Array_Wrapper<Fixed_Array<T, N>> : Array_Wrapper_Base<T, N>
+{};
+
+template <typename T, std::size_t N>
+struct Array_Wrapper<std::array<T, N>> : Array_Wrapper_Base<T, N>
+{};
+
+
+template <std::size_t N> requires(N>0)
 struct Fixed_String : Fixed_Array_Base<char, N>
 {
-
   public:
 	using iterator = std::string_view::iterator;
 	
@@ -104,18 +105,18 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 	constexpr Fixed_String(const char (&src)[N])
 		: Array(src) {}
 
-	constexpr Fixed_String(const Fixed_Array<char, N> &src)
+	explicit constexpr Fixed_String(const Fixed_Array<char, N> &src)
 		: Array(src) {}
 
-	template <typename... ArgsT>
-	constexpr Fixed_String(const ArgsT &...Args)
+	template <typename... ArgsT> requires (std::is_array_v<ArgsT>, ...)
+	explicit constexpr Fixed_String(const ArgsT &...Args)
 	{
 		copy(Array::data, Args...);
 	}
 
 	// TODO create copy error for incorrect size
 	template <size_t SrcN, typename... ArgsT>
-	inline static constexpr void copy(auto _dst, const Fixed_String<SrcN> &_src, const ArgsT &...Args)
+	inline static constexpr void copy(auto _dst, const auto &_src, const ArgsT &...Args)
 	{
 		copy(std::copy_n(_src.data, SrcN - 1, _dst), Args...);
 	}
@@ -135,10 +136,6 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 	constexpr iterator end() const noexcept	{ return to_string_view().end();	}
 	constexpr iterator begin() const noexcept { return to_string_view().begin();	}
 
-	// constexpr operator ctll::fixed_string<N - 1>() const noexcept
-	// {
-	// 	return ctll::fixed_string(Array::data);
-	// }
 
 	constexpr bool operator==(std::string_view &_str)
 	{
@@ -158,17 +155,27 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 	{
 		return ELFHash(Array::data, N);
 	}
+
+#ifdef CTRE_V2__CTRE__HPP
+	constexpr operator ctll::fixed_string<N - 1>() const noexcept
+	{
+		return ctll::fixed_string(Array::data);
+	}
+#endif
 };
 
 template <std::size_t N>
-struct Array_Metadata<Fixed_String<N>> : Array_Metadata_Base<char, N>
+struct Array_Wrapper<Fixed_String<N>> : Array_Wrapper_Base<char, N>
 {};
 
-template <typename... ArgsT>
-Fixed_String(const ArgsT &...) -> Fixed_String<Array_Sum<ArgsT...>() - sizeof...(ArgsT) + 1>;
+//TODO clean this up it's a mess
+template <typename... ArgsT> requires ((Array_Wrapper<ArgsT>::size > 0),...)
+Fixed_String(const ArgsT &...) -> Fixed_String<(Array_Wrapper<ArgsT>::size + ...) - sizeof...(ArgsT) + 1>;
 
-// namespace ctll
-// {
-// template <size_t N>
-// fixed_string(Fixed_String<N>) -> fixed_string<N - 1>;
-// }
+#ifdef CTRE_V2__CTRE__HPP
+namespace ctll
+{
+template <size_t N>
+fixed_string(Fixed_String<N>) -> fixed_string<N - 1>;
+}
+#endif
