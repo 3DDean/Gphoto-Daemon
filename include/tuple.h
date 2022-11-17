@@ -72,7 +72,7 @@ static inline constexpr bool tupleForEach(std::tuple<Ts...> &_tuple, ArgsT &..._
 }
 
 template <std::size_t I = 0, typename... Ts, typename... ArgsT>
-static inline constexpr bool tupleForEach(auto &_func, std::tuple<Ts...> &_tuple, ArgsT &..._args)
+static inline constexpr bool tupleForEach(auto &_func, const std::tuple<Ts...> &_tuple, ArgsT &..._args)
 {
 	if constexpr (I < sizeof...(Ts))
 	{
