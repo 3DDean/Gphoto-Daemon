@@ -126,7 +126,7 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 		: Array(src) {}
 
 	template <typename... ArgsT>
-	requires(std::is_array_v<ArgsT>, ...) explicit constexpr Fixed_String(const ArgsT &...Args)
+	explicit constexpr Fixed_String(const ArgsT &...Args)
 	{
 		copy(Array::data, Args...);
 	}
@@ -136,6 +136,20 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 	inline static constexpr void copy(auto _dst, const auto &_src, const ArgsT &...Args)
 	{
 		copy(std::copy_n(_src.data, SrcN - 1, _dst), Args...);
+	}
+
+	template <size_t SrcN, typename... ArgsT>
+	inline static constexpr void copy(auto _dst, const Fixed_String<SrcN> &_src, const ArgsT &...Args)
+	{
+		copy(std::copy_n(_src.data, SrcN - 1, _dst), Args...);
+	}
+
+	template <typename... ArgsT>
+	inline static constexpr void copy(auto _dst, const char _src, const ArgsT &...Args)
+	{
+		_dst[0] = _src;
+
+		copy(_dst + 1, Args...);
 	}
 	template <size_t SrcN, typename... ArgsT>
 	inline static constexpr void copy(auto _dst, const char (&_src)[SrcN], const ArgsT &...Args)
@@ -181,7 +195,8 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 };
 
 #ifdef CTRE_V2__CTRE__HPP
-
+namespace regex
+{
 template <const Fixed_String regex>
 static constexpr inline auto regex_match = ctre::match<regex>;
 
@@ -202,7 +217,7 @@ static constexpr inline auto regex_tokenize = ctre::tokenize<regex>;
 
 template <const Fixed_String regex>
 static constexpr inline auto regex_iterator = ctre::iterator<regex>;
-
+} // namespace regex
 #endif
 
 template <std::size_t N>

@@ -8,6 +8,8 @@
 #include <variant>
 #include <vector>
 
+inline constexpr ignore_t placeholder;
+
 struct formatting_error
 {
 	constexpr formatting_error() {}
@@ -30,8 +32,6 @@ static inline constexpr std::size_t count_args = VarCount * 2 + 1;
 
 struct constant_string : public std::string_view
 {
-	static inline constexpr Fixed_String match_str = "";
-
 	using base = std::string_view;
 	using base::begin;
 	std::size_t var_type = 0;
@@ -45,7 +45,6 @@ struct constant_string : public std::string_view
 
 struct unspecified_var : public std::string_view
 {
-	static inline constexpr Fixed_String match_str = "";
 	using base = std::string_view;
 	using base::begin;
 	constexpr unspecified_var() = default;
@@ -85,9 +84,6 @@ struct float_var : public std::string_view
 		: std::string_view(str) {}
 };
 
-struct placeholder
-{};
-
 template <std::size_t Index>
 struct index_string_view
 {
@@ -103,17 +99,25 @@ struct index_string_view
 static inline constexpr Fixed_String variable_regex = "\\$\\{(.+?)\\}";
 static inline constexpr Fixed_String attribute_regex = "(.+):(.+)";
 
+using variable_types = std::tuple<str_var, int_var, float_var, unspecified_var>;
+
 using arg_variant = std::variant<constant_string, str_var, int_var, float_var, unspecified_var>;
+
+template <typename Type>
+static inline constexpr auto arg_type_index = index_of<Type, arg_variant>::value;
+
+template <typename Type>
+static inline constexpr bool is_variable_type = contains<Type, variable_types>::value;
 
 struct format_arg : arg_variant
 {
 	using base = arg_variant;
 
 	template <typename Type>
-	static inline constexpr auto index_of = get_index<Type>(base());
+	static inline constexpr auto type_index = index_of_v<Type, base>;
 
 	template <typename Type>
-	static inline constexpr auto string_index_pair = index_string_view<index_of<Type>>{Type::match_str};
+	static inline constexpr auto string_index_pair = index_string_view<type_index<Type>>{Type::match_str};
 
 	template <typename... Types>
 	static inline constexpr auto string_index_tuple = std::make_tuple(string_index_pair<Types>...);
@@ -177,7 +181,7 @@ struct format_arg : arg_variant
 		emplace<unspecified_var>(var);
 	};
 
-	inline constexpr bool is_constant() const noexcept { return index_of<constant_string> == index(); }
+	inline constexpr bool is_constant() const noexcept { return type_index<constant_string> == index(); }
 };
 
 template <std::size_t VarCount>
@@ -239,55 +243,57 @@ struct arg_array
 	};
 };
 
+static inline constexpr std::size_t not_var = std::size_t(-1);
+
 template <typename... ArgsT>
-struct format_args
+static inline constexpr auto get_var_offset()
 {
-	std::tuple<ArgsT...> args;
+	std::array args{is_variable_type<ArgsT>...};
+	std::array<std::size_t, sizeof...(ArgsT)> indices;
+	std::size_t var_count = 0;
 
-	template <typename V, std::size_t N, typename T, T... TypeIndexes, T... index>
-	constexpr format_args(std::array<V, N> ArgArray, std::integer_sequence<T, TypeIndexes...>, std::integer_sequence<T, index...>)
-		: args{std::get<TypeIndexes>(ArgArray[index])...}
-	{}
+	for (auto is_var = args.begin(), index = indices.begin(); is_var < args.end(); is_var++, index++)
+		*index = (*is_var) ? var_count++ : not_var;
 
-	template <typename T, T... TypeIndexes>
-	constexpr format_args(auto ArgArray, std::integer_sequence<T, TypeIndexes...> integer_seq)
-		: format_args(ArgArray, integer_seq, std::make_index_sequence<ArgArray.size()>())
-	{}
+	return indices;
 };
 
-template <typename Array, typename TypeIndexes>
-struct format_args_converter;
-
-template <typename Variant, typename IndexT, IndexT... TypeIndexes>
-struct format_args_converter<Variant, std::integer_sequence<IndexT, TypeIndexes...>>
+template <std::size_t N>
+static inline constexpr auto process_arg(str_var var, const Fixed_String<N> &param)
 {
-	using type = format_args<std::variant_alternative_t<TypeIndexes, Variant>...>;
+	return std::pair{var, param};
 };
 
-template <typename TypeIndexes>
-using default_format_args = typename format_args_converter<format_arg::base, TypeIndexes>::type;
-
-template <Fixed_String... SubStrs>
-struct format_string
+template <typename T>
+static inline constexpr auto process_arg(T arg, ignore_t)
 {
-	static constexpr Fixed_String str{SubStrs...};
-
-	// This cannot be moved to a template parameter because of std::string_view
-	static constexpr auto arg_array_obj = arg_array<count_vars(str)>(str);
-
-	using type_indices = to_integer_sequence_t<arg_array_obj.get_type_indices()>;
-	using var_indices = to_integer_sequence_t<arg_array_obj.get_var_indices()>;
-
-	using args_type = default_format_args<type_indices>;
-
-	// TODO remove once assign args has been converted
-	static constexpr auto var_indexes = arg_array_obj.get_var_indices();
-
-	static constexpr args_type args = args_type(arg_array_obj.args, type_indices());
+	return arg;
 };
 
-// Parameter parsing start
-static constexpr std::size_t constant_string_index = std::size_t(-1);
+template <typename T>
+requires(!std::same_as<T, ignore_t>) static inline constexpr auto process_arg(str_var, T param)
+{
+	static_assert(std::is_same_v<T, int>);
+	// throw std::exception("Next target");
+	return 1;
+};
+
+template <typename T, typename T2>
+static inline constexpr auto process_arg(T arg, T2 param)
+{
+	// static_assert(std::is_same_v<T2, int>);
+	// throw std::exception("Next target");
+	return 1;
+};
+
+template <std::size_t I, typename TupleT>
+static inline constexpr auto get_parameter(TupleT &parameters)
+{
+	if constexpr (I != not_var || std::tuple_size_v < TupleT >> I)
+		return std::get<I>(parameters);
+	else
+		return ignore;
+};
 
 template <static_string_type Str>
 static inline constexpr auto parse_param()
@@ -308,16 +314,16 @@ static inline constexpr auto parse_param()
 	}
 };
 
-template <Fixed_String Str>
-static inline constexpr auto parse_param()
+template <std::size_t N>
+static inline constexpr auto parse_param(Fixed_String<N> Str)
 {
 	return parse_param<static_string<Str>>();
 };
 
-template <placeholder>
+template <ignore_t>
 static inline constexpr auto parse_param()
 {
-	return placeholder();
+	return ignore;
 };
 
 template <auto... Params>
@@ -326,68 +332,76 @@ requires(sizeof...(Params) > 1) static inline constexpr auto parse_params()
 	return std::tuple{parse_param<Params>()...};
 }
 
-template <auto base_pos, std::size_t var_index>
-constexpr auto merge_arg(auto &&base, auto &&parameters)
+template <typename... ArgsT>
+static constexpr inline auto make_format_args(ArgsT... Args);
+
+template <typename... ArgsT>
+struct format_args
 {
-	auto return_base = [&base]()
-	{
-		auto arg = std::get<base_pos>(base);
+	std::tuple<ArgsT...> args;
+	// Keeps track of which types are variables
+	using var_offsets = to_integer_sequence_t<get_var_offset<ArgsT...>()>;
 
-		return std::make_tuple(arg);
-	};
+	constexpr format_args(ArgsT &...Args)
+		: args{Args...}
+	{}
 
-	if constexpr (var_index == constant_string_index)
+	template <typename V, std::size_t N, typename T, T... TypeIndexes, T... index>
+	constexpr format_args(std::array<V, N> ArgArray, std::integer_sequence<T, TypeIndexes...>, std::integer_sequence<T, index...>)
+		: args{std::get<TypeIndexes>(ArgArray[index])...}
+	{}
+
+	template <typename T, T... TypeIndexes>
+	constexpr format_args(auto ArgArray, std::integer_sequence<T, TypeIndexes...> integer_seq)
+		: format_args(ArgArray, integer_seq, std::make_index_sequence<ArgArray.size()>())
+	{}
+
+	template <typename T, T... VarOffsets, T... index>
+	constexpr auto assign_vars_impl(const auto parameters, std::integer_sequence<T, VarOffsets...>, std::integer_sequence<T, index...>) const
 	{
-		return return_base();
+		return make_format_args(process_arg(std::get<index>(args), get_parameter<VarOffsets>(parameters))...);
 	}
-	else
+
+	constexpr auto assign_vars(const auto... Params) const
 	{
-		auto arg = std::get<var_index>(parameters);
-		using ArgT = std::decay_t<decltype(arg)>;
-		if constexpr (std::is_same_v<ArgT, placeholder>)
-		{
-			return return_base();
-		}
-		else if constexpr (std::is_same_v<ArgT, std::string_view>)
-		{
-			using VarT = std::decay_t<decltype(std::get<base_pos>(base))>;
-			return std::make_tuple(constant_string(arg, format_arg::index_of<VarT>));
-		}
-		else
-		{
-			return arg;
-		}
+		return assign_vars_impl(std::tuple{Params...}, var_offsets(), std::make_index_sequence<sizeof...(ArgsT)>{});
 	}
-}
-
-template <auto Index_Array, typename T, T... index>
-constexpr auto merge_args(auto &&container, auto &&parameters, std::integer_sequence<T, index...>)
-{
-	return std::tuple_cat(merge_arg<index, Index_Array[index]>(container, parameters)...);
-}
-
-template <auto Index_tuple>
-static inline constexpr auto merge_args(auto &&base_tuple, auto &&parameters)
-{
-	return merge_args<Index_tuple>(base_tuple, parameters, std::make_index_sequence<Index_tuple.size()>());
 };
 
-template <auto... Args>
-struct assign_args;
-
-template <format_string Format_String, auto... Params>
-struct assign_args<Format_String, Params...>
+// TODO convert this into a format context
+template <typename... ArgsT>
+static constexpr inline auto make_format_args(ArgsT... Args)
 {
-	static constexpr auto args_tuple = parse_params<Params...>();
-	static constexpr auto args = merge_args<Format_String.var_indexes>(Format_String.args.args, args_tuple);
+	return format_args<ArgsT...>(Args...);
+}
+
+template <typename Array, typename TypeIndexes>
+struct format_args_converter;
+
+template <typename Variant, typename IndexT, IndexT... TypeIndexes>
+struct format_args_converter<Variant, std::integer_sequence<IndexT, TypeIndexes...>>
+{
+	using type = format_args<std::variant_alternative_t<TypeIndexes, Variant>...>;
 };
 
-void format_test()
+template <typename TypeIndexes>
+using default_format_args = typename format_args_converter<format_arg::base, TypeIndexes>::type;
+
+template <Fixed_String... SubStrs>
+struct format_string
 {
-	constexpr format_string<Fixed_String{"<input type=${str:type} id=${str:id} name=${str:name} ${value}>",
-										 "<label for=${str:id}>${label}</label>"}>
-		test;
-}
+	static constexpr Fixed_String str{SubStrs...};
+
+	// This cannot be moved to a template parameter because of the pointer in std::string_view
+	static constexpr auto arg_array_obj = arg_array<count_vars(str)>(str);
+
+	using type_indices = to_integer_sequence_t<arg_array_obj.get_type_indices()>;
+	using var_indices = to_integer_sequence_t<arg_array_obj.get_var_indices()>;
+
+	using args_type = default_format_args<type_indices>;
+
+	static constexpr args_type args = args_type(arg_array_obj.args, type_indices());
+};
 
 // Temporary
 template <Fixed_String Str>
@@ -395,3 +409,7 @@ constexpr auto operator"" _fStr()
 {
 	return Str;
 }
+
+template <typename T>
+struct formater
+{};

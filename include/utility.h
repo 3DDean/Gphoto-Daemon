@@ -12,23 +12,51 @@ struct to_integer_sequence<Array, std::integer_sequence<IndexT, Indices...>>
 };
 
 template <auto Array>
-using to_integer_sequence_t = to_integer_sequence<Array>::type;
+using to_integer_sequence_t = typename to_integer_sequence<Array>::type;
 
-static inline constexpr std::size_t type_not_found = -1;
-
-template <std::size_t I, typename T, typename Head, typename... ArgsT>
-constexpr inline std::size_t get_index()
+struct type_not_found : std::integral_constant<std::size_t, std::size_t(-1)>
 {
-	if constexpr (std::same_as<T, Head>)
-		return I;
-	else if constexpr (sizeof...(ArgsT) > 0)
-		return get_index<I + 1, T, ArgsT...>();
-	else
-		return type_not_found;
-}
+};
+
+template <std::size_t Index>
+using index_constant = std::integral_constant<std::size_t, Index>;
+
+template <std::size_t Index, typename T, typename... TypeList>
+struct index_finder;
+
+template <std::size_t Index, typename T, typename Head, typename... Tail>
+struct index_finder<Index, T, Head, Tail...> : std::conditional_t<std::is_same_v<T, Head>, index_constant<Index>, index_finder<Index + 1, T, Tail...>>
+{};
+
+template <std::size_t Index, typename T>
+struct index_finder<Index, T> : std::integral_constant<type_not_found, type_not_found{}>
+{};
+
+template <typename T, typename Container>
+struct index_of;
 
 template <typename T, template <typename...> class container, typename... ArgsT>
-constexpr inline std::size_t get_index(container<ArgsT...>)
+struct index_of<T, container<ArgsT...>> : index_finder<0, T, ArgsT...>
 {
-	return get_index<0, T, ArgsT...>();
-}
+};
+
+template <typename T, typename Container>
+static constexpr auto index_of_v = index_of<T, Container>::value;
+
+template <typename T, typename Container>
+struct contains
+{
+	using index_result = index_of<T, Container>;
+	static constexpr auto index = index_result::value;
+
+	static constexpr bool value = !std::is_same_v<typename index_result::value_type, type_not_found>;
+	using value_type = bool;
+	using type = contains;
+	constexpr operator value_type() const noexcept { return value; }
+	constexpr value_type operator()() const noexcept { return value; }
+};
+
+struct ignore_t
+{};
+
+inline constexpr ignore_t ignore;
