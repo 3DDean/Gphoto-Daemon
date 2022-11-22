@@ -14,6 +14,11 @@ struct to_integer_sequence<Array, std::integer_sequence<IndexT, Indices...>>
 template <auto Array>
 using to_integer_sequence_t = typename to_integer_sequence<Array>::type;
 
+template <typename T, T... Indicies>
+using integer_sequence = std::integer_sequence<T, Indicies...>;
+
+// namespace pp_container
+// {
 struct type_not_found : std::integral_constant<std::size_t, std::size_t(-1)>
 {
 };
@@ -31,7 +36,7 @@ struct index_finder<Index, T, Head, Tail...> : std::conditional_t<std::is_same_v
 template <std::size_t Index, typename T>
 struct index_finder<Index, T> : std::integral_constant<type_not_found, type_not_found{}>
 {};
-
+// Find index of
 template <typename T, typename Container>
 struct index_of;
 
@@ -55,8 +60,77 @@ struct contains
 	constexpr operator value_type() const noexcept { return value; }
 	constexpr value_type operator()() const noexcept { return value; }
 };
-
+// } // namespace pp_container
 struct ignore_t
 {};
 
 inline constexpr ignore_t ignore;
+
+template <typename T, typename... ArgsT>
+concept indexable = requires(T obj, ArgsT... args)
+{
+	obj.operator[](args...);
+};
+
+template<typename... ArgsT>
+struct type_sequence
+{};
+
+namespace pp_util
+{
+
+template <typename Tuple1, typename Arg2>
+struct concat;
+
+template <typename... ResultT, typename Arg2>
+struct concat<std::tuple<ResultT...>, Arg2>
+{
+	using type = std::tuple<ResultT..., Arg2>;
+};
+
+template <typename... ResultT, typename... ArgsT>
+struct concat<std::tuple<ResultT...>, std::tuple<ArgsT...>>
+{
+	using type = std::tuple<ResultT..., ArgsT...>;
+};
+
+template <typename... ResultT, typename Arg2>
+struct concat<type_sequence<ResultT...>, Arg2>
+{
+	using type = type_sequence<ResultT..., Arg2>;
+};
+
+template <typename... ResultT, typename... ArgsT>
+struct concat<type_sequence<ResultT...>, type_sequence<ArgsT...>>
+{
+	using type = type_sequence<ResultT..., ArgsT...>;
+};
+
+template <typename T>
+struct get_tail;
+
+template <template <typename...> class Container, typename Head, typename... Tail>
+struct get_tail<Container<Head, Tail...>>
+{
+	using type = Container<Tail...>;
+};
+
+template <typename T>
+struct get_head;
+
+template <template <typename...> class Container, typename Head, typename... Tail>
+struct get_head<Container<Head, Tail...>>
+{
+	using type = Head;
+};
+
+} // namespace pp_util
+
+template <typename Tuple1, typename Arg>
+using concat_t = typename pp_util::concat<Tuple1, Arg>::type;
+
+template <typename T>
+using get_tail_t = typename pp_util::get_tail<T>::type;
+
+template <typename T>
+using get_head_t = typename pp_util::get_head<T>::type;
