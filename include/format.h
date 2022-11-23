@@ -29,7 +29,10 @@ constexpr size_t count_vars(const std::string_view _str) noexcept
 
 template <std::size_t VarCount>
 static inline constexpr std::size_t count_args = VarCount * 2 + 1;
-
+struct fmt_data
+{
+	std::size_t total_length;
+};
 struct constant_string : public std::string_view
 {
 	using base = std::string_view;
@@ -109,6 +112,8 @@ static inline constexpr Fixed_String attribute_regex = "(.+):(.+)";
 
 using variable_types = std::tuple<str_var, int_var, float_var, unspecified_var>;
 
+
+// constant_string->fixed_string<>
 using arg_variant = std::variant<constant_string, str_var, int_var, float_var, unspecified_var>;
 
 template <typename Type>
@@ -275,6 +280,10 @@ struct arg_array
 	constexpr const_reference operator[](std::size_t Index) const { return args[Index]; }
 };
 
+// Purely a class to clean up error messages
+template <typename Container, auto getter_param>
+struct getter_data_constant;
+
 template <typename Container>
 struct getter_data
 {
@@ -290,10 +299,6 @@ struct getter_data
 
 	constexpr operator getter_param_type() const { return index; }
 };
-
-// Purely a class to clean up error messages
-template <typename Container, auto getter_param>
-struct getter_data_constant;
 
 template <const getter_data Value>
 using make_getter_data_constant = getter_data_constant<typename decltype(Value)::container_type, (typename decltype(Value)::getter_param_type)Value>;
@@ -332,23 +337,29 @@ struct next_getter_data
 	static constexpr inline getter_data next_param_index = NextParamGetter;
 };
 
-template <typename Arg, typename Param, getter_data ArgGetter, getter_data ParamGetter>
-struct make_getter : next_getter_data<ArgGetter + 1, ParamGetter + 1>
+template <typename... Args>
+struct make_getter_base
 {
-	using type = getter<Arg, Param, make_getter_data_constant<ParamGetter>>;
+	using type = getter<Args...>;
 };
+
+template <typename Arg, typename Param, getter_data ArgGetter, getter_data ParamGetter>
+struct make_getter :
+	next_getter_data<ArgGetter + 1, ParamGetter + 1>,
+	make_getter_base<Arg, Param, make_getter_data_constant<ParamGetter>>
+{};
 
 template <typename Param, getter_data ArgGetter, getter_data ParamGetter>
-struct make_getter<constant_string, Param, ArgGetter, ParamGetter> : next_getter_data<ArgGetter + 1, ParamGetter>
-{
-	using type = getter<constant_string, make_getter_data_constant<ArgGetter>>;
-};
+struct make_getter<constant_string, Param, ArgGetter, ParamGetter> :
+	next_getter_data<ArgGetter + 1, ParamGetter>,
+	make_getter_base<constant_string, make_getter_data_constant<ArgGetter>>
+{};
 
 template <typename Arg, getter_data ArgGetter, getter_data ParamGetter>
-requires(!std::same_as<Arg, constant_string>) struct make_getter<Arg, ignore_t, ArgGetter, ParamGetter> : next_getter_data<ArgGetter + 1, ParamGetter>
-{
-	using type = getter<Arg, make_getter_data_constant<ArgGetter>>;
-};
+requires(!std::same_as<Arg, constant_string>) struct make_getter<Arg, ignore_t, ArgGetter, ParamGetter> :
+	next_getter_data<ArgGetter + 1, ParamGetter>,
+	make_getter_base<Arg, make_getter_data_constant<ArgGetter>>
+{};
 
 template <typename Arguments, getter_data ArgGetter, typename Param = std::make_index_sequence<std::tuple_size_v<Arguments>>>
 struct make_getters;
