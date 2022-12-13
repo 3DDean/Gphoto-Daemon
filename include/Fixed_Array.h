@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <iterator>
 #include <string_view>
 
 #if __has_include("ctre.hpp")
@@ -9,16 +10,23 @@
 #endif
 
 // TODO look into replacing Fixed_Array with std::array
-template <typename T, std::size_t N>
-class Fixed_Array_Base
+template <typename T, std::size_t N> requires (N < 500)
+struct Fixed_Array_Base
 {
-  public:
+	using value_type = T;
+	using size_type = std::size_t;
+	using difference_type = std::ptrdiff_t;
+	using reference = value_type &;
+	using const_reference = const value_type &;
+	using pointer = value_type *;
+	using const_pointer = const value_type *;
+
 	static constexpr std::size_t Size = N;
 	using type = T;
 
 	T data[N]{};
 
-	constexpr Fixed_Array_Base() {} // : Fixed_Array_Base(obj, std::make_index_sequence<N>()) {}
+	constexpr Fixed_Array_Base() {}
 
 	template <typename IndexT, IndexT... index>
 	constexpr Fixed_Array_Base(T obj, std::integer_sequence<IndexT, index...>)
@@ -26,7 +34,7 @@ class Fixed_Array_Base
 	{
 	}
 	constexpr Fixed_Array_Base(T obj)
-		: Fixed_Array_Base(obj, std::make_index_sequence<N>()) {}
+		: Fixed_Array_Base(obj, std::make_index_sequence<N>{}) {}
 
 	constexpr Fixed_Array_Base(const T (&src)[N]) { std::copy_n(src, N, data); }
 	constexpr Fixed_Array_Base(const Fixed_Array_Base<T, N> &src) { std::copy_n(src.data, N, data); }
@@ -49,6 +57,7 @@ class Fixed_Array_Base
 	}
 	inline static constexpr void copy(const T *_dst) {}
 
+	constexpr const T &operator[](std::size_t _index) const { return data[_index]; }
 	constexpr T &operator[](std::size_t _index) { return data[_index]; }
 
 	constexpr std::size_t size() const noexcept
@@ -112,9 +121,11 @@ struct Array_Wrapper<std::array<T, N>> : Array_Wrapper_Base<T, N>
 {};
 
 template <std::size_t N>
-requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
+requires(N > 0)
+struct Fixed_String : Fixed_Array_Base<char, N>
 {
   public:
+
 	using iterator = std::string_view::iterator;
 
 	using Array = Fixed_Array_Base<char, N>;
@@ -124,6 +135,18 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 
 	constexpr Fixed_String(const Fixed_Array<char, N> &src)
 		: Array(src) {}
+
+	// template <const char *BasePtr>
+	// constexpr Fixed_String(const fixed_string_view<BasePtr> &view)
+	// {
+	// 	std::copy_n(view.begin(), view.size, Array::data);
+	// }
+
+	explicit constexpr Fixed_String(const std::string_view str)
+	{
+		std::copy(str.begin(), str.end(), Array::data);
+		// copy(, str);
+	}
 
 	template <typename... ArgsT>
 	explicit constexpr Fixed_String(const ArgsT &...Args)
@@ -156,21 +179,31 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 	{
 		copy(std::copy_n(_src, SrcN - 1, _dst), Args...);
 	}
+
+	template <size_t SrcN, typename... ArgsT>
+	inline static constexpr void copy(auto _dst, const std::string_view& _src, const ArgsT &...Args)
+	{
+		copy(std::copy(_src.begin(), _src.end(), _dst), Args...);
+	}
+
 	inline static constexpr void copy(const char *_dst) {}
-	constexpr std::string_view to_string_view() const noexcept { return std::string_view{Array::data}; }
-	constexpr const char *to_char_ptr() const noexcept { return Array::data; }
+
+	constexpr const std::string_view to_string_view() const noexcept { return std::string_view(Array::data, N); }
+
+	constexpr const char * to_char_ptr() const noexcept { return Array::data; }
 
 	constexpr operator std::string_view() const noexcept { return to_string_view(); }
-	constexpr operator const char *() const noexcept { return to_char_ptr(); }
+	constexpr operator const char * () const noexcept { return to_char_ptr(); }
 
 	constexpr iterator end() const noexcept { return to_string_view().end(); }
 	constexpr iterator begin() const noexcept { return to_string_view().begin(); }
 
-	constexpr bool operator==(std::string_view &_str)
+	constexpr bool operator==(const std::string_view &_str) const
 	{
-		if (_str.size() == N)
+		//TODO check for null end character
+		if (_str.size() == N-1)
 		{
-			for (std::size_t i = 0; i < N; i++)
+			for (std::size_t i = 0; i < _str.size(); i++)
 			{
 				if (_str[i] != Array::data[i])
 					return false;
@@ -192,6 +225,54 @@ requires(N > 0) struct Fixed_String : Fixed_Array_Base<char, N>
 	}
 
 #endif
+};
+
+// template <auto *BasePtr>
+struct fixed_string_view
+{
+	// using base_type = std::decay_t<decltype(*BasePtr)>;
+	std::size_t offset;
+	std::size_t size;
+
+	constexpr fixed_string_view()
+		: size(0), offset(0) {}
+	// constexpr fixed_string_view(const char** ptr)
+	// 	: ptr(ptr), size(0), offset(0) {}
+
+	explicit constexpr fixed_string_view(std::size_t offset, std::size_t size)
+		: offset(offset), size(size) {}
+	
+	constexpr fixed_string_view(std::size_t size)
+		: offset(0), size(size) {}
+
+	// constexpr fixed_string_view(const char * ptr, std::size_t size)
+	// 	: offset(ptr - BasePtr), size(size){}
+
+	// constexpr fixed_string_view(const std::string_view _view)
+	// 	: fixed_string_view(_view.data(), _view.size()){}
+		// offset(_view.data() - BasePtr->to_char_ptr()), size(_view.size()) {}
+
+	constexpr fixed_string_view(fixed_string_view &&obj)
+		: fixed_string_view(obj.offset, obj.size) {}
+	constexpr fixed_string_view(const fixed_string_view &obj)
+		: fixed_string_view(obj.offset, obj.size) {}
+
+	// constexpr const char *end() const noexcept { return *BasePtr + offset + size; }
+	// constexpr const char *begin() const noexcept { return *BasePtr + offset; }
+
+	// const char* ptr(){ return *BasePtr; }
+
+	constexpr const fixed_string_view operator=(const fixed_string_view obj)
+	{
+		offset = obj.offset;
+		size = obj.size;
+		return *this;
+	}
+	
+	// constexpr std::string_view to_string_view() const noexcept { return std::string_view(*BasePtr + offset, size); }
+	// constexpr operator std::string_view() const noexcept { return to_string_view(); }
+
+	constexpr bool empty() const noexcept{return size == 0;} 
 };
 
 #ifdef CTRE_V2__CTRE__HPP

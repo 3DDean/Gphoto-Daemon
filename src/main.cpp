@@ -26,9 +26,12 @@ void term(int signum)
 
 int main(int argc, char **argv)
 {
-	format_test();
-	return -1;
+	auto tab_base1 = format_string<"<div class=${str:class} id=${str:id} name=${str:name}>${array:members}</div>">();
+	auto args = tab_base1.args;
 
+	auto tab_book4 = args.assign_vars("tab_book"_fStr, placeholder, placeholder, placeholder);
+
+	return 0;
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
 	action.sa_handler = term;
@@ -75,7 +78,7 @@ int main(int argc, char **argv)
 
 	// Commander shepherd("/run/gphoto2.sock", "/var/www/gphoto2out", test);
 	// Commander shepherd("/home/threeddean/Documents/gphoto2.sock", "/var/www/gphoto2out", test);
-	if (gphoto.detectedCameras.size() > 0)
+	if (gphoto.cameraCount() > 0)
 	{
 		if (gphoto.openCamera(0, activeCamera) < GP_OK)
 		{

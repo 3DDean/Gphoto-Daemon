@@ -1,5 +1,6 @@
 #pragma once
 #include "Fixed_Array.h"
+#include "hash.h"
 #include "static_string.h"
 #include "tuple.h"
 #include "utility.h"
@@ -7,7 +8,6 @@
 #include <ctre.hpp>
 #include <variant>
 #include <vector>
-
 inline constexpr ignore_t placeholder;
 
 struct formatting_error
@@ -29,198 +29,178 @@ constexpr size_t count_vars(const std::string_view _str) noexcept
 
 template <std::size_t VarCount>
 static inline constexpr std::size_t count_args = VarCount * 2 + 1;
-struct fmt_data
+
+// Comparator helper
+template <Fixed_String Type_Str>
+struct type_str
 {
-	std::size_t total_length;
-};
-struct constant_string : public std::string_view
-{
-	using base = std::string_view;
-	using base::begin;
-	std::size_t var_type = 0;
-
-	constexpr constant_string() = default;
-	constexpr constant_string(std::string_view str, std::size_t var_type = 0)
-		: std::string_view(str), var_type(var_type)
-	{}
-};
-
-struct unspecified_var : public std::string_view
-{
-	using base = std::string_view;
-	using base::begin;
-	constexpr unspecified_var() = default;
-	constexpr unspecified_var(auto str)
-		: std::string_view(str) {}
-};
-
-struct str_var : public std::string_view
-{
-	static inline constexpr Fixed_String match_str = "str";
-	using base = std::string_view;
-	using base::begin;
-	constexpr str_var() = default;
-	constexpr str_var(auto str)
-		: std::string_view(str) {}
-};
-
-struct int_var : public std::string_view
-{
-	static inline constexpr Fixed_String match_str = "int";
-
-	using base = std::string_view;
-	using base::begin;
-	constexpr int_var() = default;
-	constexpr int_var(auto str)
-		: std::string_view(str) {}
-};
-
-struct float_var : public std::string_view
-{
-	static inline constexpr Fixed_String match_str = "float";
-
-	using base = std::string_view;
-	using base::begin;
-	constexpr float_var() = default;
-	constexpr float_var(auto str)
-		: std::string_view(str) {}
-};
-
-template <std::size_t Index>
-struct index_string_view
-{
-	static constexpr std::size_t index() { return Index; }
-	std::string_view str;
-
-	constexpr bool operator==(std::string_view str2) const
+	constexpr bool operator()(const std::string_view str) const
 	{
-		return str == str2;
+		return Type_Str == str;
 	}
 };
 
-template <typename Output, typename InputT>
-struct variable
+template <std::size_t N = 0>
+struct constant
 {
-	constexpr variable() = default;
-	constexpr variable(InputT val)
-		: val(val) {}
-	InputT val;
+	Fixed_String<N> str;
+
+	constexpr constant(std::string_view view)
+		: str(view)
+	{}
 };
+struct string;
+
+// template<auto* Ptr>
+struct parsed_string
+{
+	// using fixed_view = fixed_string_view<Ptr>;
+	using fixed_view = fixed_string_view;
+	bool is_var;
+	constexpr parsed_string()
+		: is_var(true), type(), name(), attribute() {}
+
+	constexpr parsed_string(const fixed_view type, const fixed_view name, const fixed_view attribute)
+		: is_var(true), type(type), name(name), attribute(attribute)
+	{}
+
+	constexpr parsed_string(fixed_view const_str)
+		: is_var(false), attribute(const_str)
+	{}
+
+	constexpr auto get_constant() const { return attribute; }
+
+	fixed_view type;
+	fixed_view name;
+	fixed_view attribute;
+};
+
+template <std::size_t N>
+struct unspecified
+{
+	constexpr unspecified(std::size_t id_hash, std::string_view type, std::string_view fmt_str){};
+};
+
+template <>
+struct unspecified<0>
+{
+	// template<auto* Ptr>
+	constexpr unspecified(parsed_string str){};
+};
+
+template <typename Output, Fixed_String Type_Str = "">
+struct variable_base
+{
+	std::size_t id_hash;
+	constexpr variable_base() = default;
+	constexpr variable_base(std::size_t id_hash)
+		: id_hash(id_hash){};
+	using type = Output;
+
+	static constexpr bool str_match(const std::string_view str)
+	{
+		return Type_Str == str;
+	}
+};
+
+template <typename Output>
+struct variable;
+
+template <>
+struct variable<string> :
+	variable_base<variable<string>, "str">
+{
+	using base = variable_base;
+	using base::base;
+
+	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
+		: base(id_hash)
+	{}
+};
+
+template <>
+struct variable<int> :
+	variable_base<variable<int>, "int">
+{
+	using base = variable_base<variable<int>, "int">;
+	using base::base;
+
+	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
+		: base(id_hash)
+	{}
+};
+
+template <>
+struct variable<float> :
+	variable_base<variable<float>, "float">
+{
+	using base = variable_base;
+	using base::base;
+
+	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
+		: base(id_hash)
+	{}
+};
+
+template <typename... Types>
+using tuple_variable_wrapper = std::tuple<variable<Types>...>;
+
+using basic_variables = tuple_variable_wrapper<string, int, float>;
 
 static inline constexpr Fixed_String variable_regex = "\\$\\{(.+?)\\}";
-static inline constexpr Fixed_String attribute_regex = "(.+):(.+)";
+static inline constexpr Fixed_String attribute_regex = "(.+):(.+(:.+)?)";
 
-using variable_types = std::tuple<str_var, int_var, float_var, unspecified_var>;
-
-
-// constant_string->fixed_string<>
-using arg_variant = std::variant<constant_string, str_var, int_var, float_var, unspecified_var>;
-
-template <typename Type>
-static inline constexpr auto arg_type_index = index_of<Type, arg_variant>::value;
-
-template <typename Type>
-static inline constexpr bool is_variable_type = contains<Type, variable_types>::value;
-
-struct format_arg : arg_variant
-{
-	using base = arg_variant;
-
-	template <typename Type>
-	static inline constexpr auto type_index = index_of_v<Type, base>;
-
-	template <typename Type>
-	static inline constexpr auto string_index_pair = index_string_view<type_index<Type>>{Type::match_str};
-
-	template <typename... Types>
-	static inline constexpr auto string_index_tuple = std::make_tuple(string_index_pair<Types>...);
-
-	static inline constexpr auto indexed_tuple = string_index_tuple<str_var, int_var, float_var>;
-
-	using base::emplace;
-
-	constexpr format_arg() = default;
-
-	template <typename T, typename... ArgsT>
-	inline constexpr auto emplace(ArgsT &&...Args)
-	{
-		if constexpr (__cpp_lib_variant >= 202106L)
-			base::template emplace<T>(Args...);
-		else
-			base::operator=(base(std::in_place_type<T>, std::forward<ArgsT>(Args)...));
-	};
-
-	template <std::size_t I, typename... ArgsT>
-	inline constexpr auto emplace(ArgsT &&...Args)
-	{
-		if constexpr (__cpp_lib_variant >= 202106L)
-			base::template emplace<I>(Args...);
-		else
-			base::operator=(base(std::in_place_index<I>, std::forward<ArgsT>(Args)...));
-	};
-
-	template <typename Itt, typename End>
-	inline constexpr format_arg(Itt start, End end)
-	{
-		std::string_view str(start, end);
-
-		if (ctre::match<variable_regex>(str))
-			throw formatting_error("constant_string contains variable ", str);
-
-		emplace<constant_string>(str);
-	};
-
-	inline constexpr format_arg(std::string_view var)
-	{
-		auto [whole, firstCap, secondCap] = ctre::match<attribute_regex>(var);
-		std::string_view second_cap = secondCap;
-		std::string_view first_cap = firstCap;
-
-		bool matched = false;
-		auto matcher = [&](const auto test) -> bool
-		{
-			if (test == first_cap)
-			{
-				emplace<test.index()>(second_cap);
-				matched = true;
-				return false;
-			}
-			return true;
-		};
-		tupleForEach(matcher, indexed_tuple);
-		if (matched)
-			return;
-
-		emplace<unspecified_var>(var);
-	};
-
-	inline constexpr bool is_constant() const noexcept { return type_index<constant_string> == index(); }
-};
-
+//TODO Make the assign lambdas skip over empty constants
 template <std::size_t VarCount>
 struct arg_array
 {
-  private:
 	template <typename T>
-	using array = std::array<T, count_args<VarCount>>;
-	using args_array = array<format_arg>;
-	// using index_array = array<std::size_t>;
+	using array = Fixed_Array<T, count_args<VarCount>>;
+
+	// using parsed_string_type = parsed_string<StrPtr>;
+	using parsed_string_type = parsed_string;
+	using args_array = array<parsed_string_type>;
+
 	using arg_iterator_const = typename args_array::const_iterator;
 
 	args_array args;
 
-  public:
 	using value_type = typename args_array::value_type;
 	using const_reference = typename args_array::const_reference;
 
 	constexpr std::size_t size() const { return args.size(); }
-	// constexpr const args_array& get_args() const { return args; }
 
 	consteval arg_array(const std::string_view str)
 	{
-		auto assign_arg = [](auto &itt, auto... args)
+		auto make_view = [&str](std::size_t ptr, std::size_t size)
 		{
-			*itt = format_arg(args...);
+			return fixed_string_view(ptr, size);
+		};
+
+		auto assign_const = [&str, make_view](auto &itt, auto start, auto end)
+		{
+			*itt = parsed_string_type(make_view(start - str.data(), end - start));
+			++itt;
+		};
+		auto assign_arg = [&str, make_view](auto &itt, auto var_str)
+		{
+			auto [match, type_match, name_match, attributes_match] = ctre::match<attribute_regex>(var_str);
+			if (var_str.end() < str.data() + str.size())
+			{
+				if (!match)
+					*itt = parsed_string_type(make_view(var_str.data() - str.data(), var_str.size()));
+				else
+				{
+					fixed_string_view type_view(type_match.data() - str.data(), type_match.size());
+					fixed_string_view name_view(name_match.data() - str.data(), name_match.size());
+
+					fixed_string_view attributes_view;
+					if (attributes_match)
+						attributes_view = fixed_string_view(attributes_match.data() - str.data(), attributes_match.size());
+
+					*itt = parsed_string_type(type_view, name_view, attributes_view);
+				}
+			}
 			++itt;
 		};
 
@@ -229,14 +209,14 @@ struct arg_array
 
 		for (auto [match, var] : ctre::range<variable_regex>(str))
 		{
-			assign_arg(output_itt, const_start, match.begin());
+			assign_const(output_itt, const_start, match.begin());
 			assign_arg(output_itt, var.to_view());
 
 			const_start = match.end();
 		}
 
 		if (const_start < str.end())
-			assign_arg(output_itt, const_start, str.end());
+			assign_const(output_itt, const_start, str.end());
 	}
 
 	template <typename ArrayT>
@@ -250,67 +230,53 @@ struct arg_array
 		return indices;
 	}
 
-	constexpr auto get_type_indices() const
-	{
-		using index_array = array<std::size_t>;
-		using index_ref = typename index_array::reference;
-		using args_ref = typename args_array::const_reference;
-
-		auto action = [](index_ref index, args_ref arg)
-		{ index = arg.index(); };
-
-		return iterate_args<index_array>(action);
-	}
-
-	constexpr auto get_var_indices() const
-	{
-		using index_array = array<std::size_t>;
-		using index_ref = typename index_array::reference;
-		using args_ref = typename args_array::const_reference;
-		std::size_t var_pos = 0;
-
-		auto action = [&var_pos](index_ref index, args_ref arg)
-		{
-			index = (arg.is_constant()) ? std::size_t(-1) : var_pos++;
-		};
-
-		return iterate_args<index_array>(action);
-	};
-
 	constexpr const_reference operator[](std::size_t Index) const { return args[Index]; }
 };
 
+// TODO remove this
+template <typename Output, typename InputT>
+struct variable_pair
+{
+	constexpr variable_pair() = default;
+	constexpr variable_pair(InputT val)
+		: val(val) {}
+	InputT val;
+};
+
+namespace Argument
+{
 // Purely a class to clean up error messages
 template <typename Container, auto getter_param>
-struct getter_data_constant;
+struct container_data_constant;
 
 template <typename Container>
-struct getter_data
+struct container_data
 {
-	constexpr getter_data() = default;
-	constexpr getter_data(std::size_t index)
+	constexpr container_data() = default;
+	constexpr container_data(std::size_t index)
 		: index(index) {}
 	std::size_t index = 0;
 
 	using container_type = Container;
 	using getter_param_type = std::size_t;
 
-	constexpr getter_data operator+(std::size_t val) const { return getter_data(this->index + val); }
+	constexpr container_data operator+(std::size_t val) const { return container_data(this->index + val); }
 
 	constexpr operator getter_param_type() const { return index; }
 };
 
-template <const getter_data Value>
-using make_getter_data_constant = getter_data_constant<typename decltype(Value)::container_type, (typename decltype(Value)::getter_param_type)Value>;
+template <const container_data Value>
+using make_container_data_constant = container_data_constant<typename decltype(Value)::container_type, (typename decltype(Value)::getter_param_type)Value>;
 
 template <typename... Args>
-struct getter;
+struct processor_functor;
 
+// A processor that uses the argument and the parameter
 template <typename Arg, typename Param, typename ContainerType, typename getter_param_type, getter_param_type getter_param>
-struct getter<Arg, Param, getter_data_constant<ContainerType, getter_param>>
+struct processor_functor<Arg, Param, container_data_constant<ContainerType, getter_param>>
 {
 	using container_type = ContainerType;
-	using output_type = variable<Arg, Param>;
+	using output_type = variable_pair<Arg, Param>;
 
 	constexpr output_type operator()(const auto &args, const std::same_as<ContainerType> auto &params) const
 	{
@@ -319,7 +285,7 @@ struct getter<Arg, Param, getter_data_constant<ContainerType, getter_param>>
 };
 
 template <typename Arg, typename ContainerType, typename getter_param_type, getter_param_type getter_param>
-struct getter<Arg, getter_data_constant<ContainerType, getter_param>>
+struct processor_functor<Arg, container_data_constant<ContainerType, getter_param>>
 {
 	using container_type = ContainerType;
 	using output_type = Arg;
@@ -330,91 +296,94 @@ struct getter<Arg, getter_data_constant<ContainerType, getter_param>>
 	}
 };
 
-template <getter_data NextArgGetter, getter_data NextParamGetter>
-struct next_getter_data
+// get_processor uses type deduction to determine which argument is being processed and whether the parameter should be consumed
+// The default case is a processor that uses both argument and the parameter
+template <typename Arg, typename Param, container_data ArgIterator, container_data ParamIterator>
+struct get_processor
 {
-	static constexpr inline getter_data next_arg_index = NextArgGetter;
-	static constexpr inline getter_data next_param_index = NextParamGetter;
+	using processor = processor_functor<Arg, Param, make_container_data_constant<ParamIterator>>;
+	static constexpr auto next_argument() { return ArgIterator + 1; }
+	static constexpr auto next_parameter() { return ParamIterator + 1; }
 };
 
-template <typename... Args>
-struct make_getter_base
+// The argument is a constant so we just increment the arg iterator
+template <std::size_t N, typename Param, container_data ArgIterator, container_data ParamIterator>
+requires(!std::is_same_v<ignore_t, Param>) struct get_processor<constant<N>, Param, ArgIterator, ParamIterator>
 {
-	using type = getter<Args...>;
+	using processor = processor_functor<constant<N>, make_container_data_constant<ArgIterator>>;
+	static constexpr auto next_argument() { return ArgIterator + 1; }
+	static constexpr auto next_parameter() { return ParamIterator; }
 };
 
-template <typename Arg, typename Param, getter_data ArgGetter, getter_data ParamGetter>
-struct make_getter :
-	next_getter_data<ArgGetter + 1, ParamGetter + 1>,
-	make_getter_base<Arg, Param, make_getter_data_constant<ParamGetter>>
-{};
-
-template <typename Param, getter_data ArgGetter, getter_data ParamGetter>
-struct make_getter<constant_string, Param, ArgGetter, ParamGetter> :
-	next_getter_data<ArgGetter + 1, ParamGetter>,
-	make_getter_base<constant_string, make_getter_data_constant<ArgGetter>>
-{};
-
-template <typename Arg, getter_data ArgGetter, getter_data ParamGetter>
-requires(!std::same_as<Arg, constant_string>) struct make_getter<Arg, ignore_t, ArgGetter, ParamGetter> :
-	next_getter_data<ArgGetter + 1, ParamGetter>,
-	make_getter_base<Arg, make_getter_data_constant<ArgGetter>>
-{};
-
-template <typename Arguments, getter_data ArgGetter, typename Param = std::make_index_sequence<std::tuple_size_v<Arguments>>>
-struct make_getters;
-
-template <typename... Arguments, getter_data ArgGetter, typename IndexT, IndexT... Indicies>
-struct make_getters<std::tuple<Arguments...>, ArgGetter, std::integer_sequence<IndexT, Indicies...>>
+// The parameter is ignored so just use the arg
+template <typename Arg, container_data ArgIterator, container_data ParamIterator>
+struct get_processor<Arg, ignore_t, ArgIterator, ParamIterator>
 {
-	using type = type_sequence<typename make_getter<Arguments, ignore_t, ArgGetter + Indicies, ArgGetter>::type...>;
+	using processor = processor_functor<Arg, make_container_data_constant<ArgIterator>>;
+	static constexpr auto next_argument() { return ArgIterator + 1; }
+	static constexpr auto next_parameter() { return ParamIterator; }
 };
 
-template <typename Arguments, getter_data ArgGetter>
-using make_getters_t = typename make_getters<Arguments, ArgGetter>::type;
+// Skips
+template <typename Arguments, container_data ArgIterator, typename Param = std::make_index_sequence<std::tuple_size_v<Arguments>>>
+struct get_processors_no_params;
 
-template <typename Arguments, typename Parameters, typename Results, getter_data ArgGetter, getter_data ParamGetter>
+template <typename... Arguments, container_data ArgIterator, typename IndexT, IndexT... Indicies>
+struct get_processors_no_params<std::tuple<Arguments...>, ArgIterator, std::integer_sequence<IndexT, Indicies...>>
+{
+	using type = type_sequence<typename get_processor<Arguments, ignore_t, ArgIterator + Indicies, ArgIterator>::processor...>;
+};
+
+template <typename Arguments, container_data ArgIterator>
+using get_processors_no_params_t = typename get_processors_no_params<Arguments, ArgIterator>::type;
+
+template <typename Arguments, typename Parameters, typename Results, container_data ArgIterator, container_data ParamIterator>
 struct apply_parameters
 {
-	using ArgsContainer = typename decltype(ArgGetter)::container_type;
-	using ParamContainer = typename decltype(ParamGetter)::container_type;
+	using ArgsContainerType = typename decltype(ArgIterator)::container_type;
+	using ParamIteratorType = typename decltype(ParamIterator)::container_type;
+
+	template <typename T>
+	static constexpr bool is_parameter = std::is_same_v<ParamIteratorType, typename T::container_type>;
 
 	using head_arg = get_head_t<Arguments>;
 	using tail_args = get_tail_t<Arguments>;
 	using head_param = get_head_t<Parameters>;
 	using tail_params = get_tail_t<Parameters>;
 
-	using new_result = make_getter<head_arg, head_param, ArgGetter, ParamGetter>;
-	using result_type = typename new_result::type;
+	// ArgIterator= ArgIterator
+	using result_data = get_processor<head_arg, head_param, ArgIterator, ParamIterator>;
+	using result = typename result_data::processor;
 
-	using results = concat_t<Results, result_type>;
+	using results = concat_t<Results, result>;
 	using args = tail_args;
-	using params = std::conditional_t<std::is_same_v<ParamContainer, typename result_type::container_type>, tail_params, Parameters>;
+	using params = std::conditional_t<is_parameter<result>, tail_params, Parameters>;
 
   public:
-	using type = typename apply_parameters<args, params, results, new_result::next_arg_index, new_result::next_param_index>::type;
+	using type = typename apply_parameters<args, params, results, result_data::next_argument(), result_data::next_parameter()>::type;
 };
 
-template <typename Results, getter_data ArgGetter, getter_data ParamGetter>
-struct apply_parameters<std::tuple<>, std::tuple<>, Results, ArgGetter, ParamGetter>
+template <typename Results, container_data ArgIterator, container_data ParamIterator>
+struct apply_parameters<std::tuple<>, std::tuple<>, Results, ArgIterator, ParamIterator>
 {
 	using type = Results;
 };
 
-template <typename... Arguments, typename Results, getter_data ArgGetter, getter_data ParamGetter>
-struct apply_parameters<std::tuple<Arguments...>, std::tuple<>, Results, ArgGetter, ParamGetter>
+template <typename... Arguments, typename Results, container_data ArgIterator, container_data ParamIterator>
+struct apply_parameters<std::tuple<Arguments...>, std::tuple<>, Results, ArgIterator, ParamIterator>
 {
-	using type = concat_t<Results, make_getters_t<std::tuple<Arguments...>, ArgGetter>>;
+	using type = concat_t<Results, typename get_processors_no_params<std::tuple<Arguments...>, ArgIterator>::type>;
 };
 
-template <typename Arguments, std::same_as<ignore_t>... Parameters, typename Results, getter_data ArgGetter, getter_data ParamGetter>
-struct apply_parameters<Arguments, std::tuple<Parameters...>, Results, ArgGetter, ParamGetter>
+template <typename Arguments, std::same_as<ignore_t>... Parameters, typename Results, container_data ArgIterator, container_data ParamIterator>
+struct apply_parameters<Arguments, std::tuple<Parameters...>, Results, ArgIterator, ParamIterator>
 {
-	using type = typename apply_parameters<Arguments, std::tuple<>, Results, ArgGetter, ParamGetter>::type;
+	using type = typename apply_parameters<Arguments, std::tuple<>, Results, ArgIterator, ParamIterator>::type;
 };
 
 template <typename Arguments, typename... Params>
-using apply_parameters_t = typename apply_parameters<Arguments, std::tuple<Params...>, type_sequence<>, getter_data<Arguments>{}, getter_data<std::tuple<Params...>>{}>::type;
+using apply_parameters_t = typename apply_parameters<Arguments, std::tuple<Params...>, type_sequence<>, container_data<Arguments>{}, container_data<std::tuple<Params...>>{}>::type;
+} // namespace Argument
 
 template <typename... ArgsT>
 struct format_args
@@ -439,27 +408,20 @@ struct format_args
 		: format_args(ArgArray, integer_seq, std::make_index_sequence<ArgArray.size()>{})
 	{}
 
-	template <typename ParamContainer, typename... Getters>
-	constexpr auto assign_vars_impl(const ParamContainer parameters, type_sequence<Getters...>) const
+	template <typename ParamIterator, typename... Getters>
+	constexpr auto assign_vars_impl(const ParamIterator parameters, type_sequence<Getters...>) const
 	{
-		return make_format_args(Getters{}(args, parameters)...);
+		return ::format_args<typename Getters::output_type...>(Getters{}(args, parameters)...);
 	}
 
 	template <typename... ParamT>
 	constexpr auto assign_vars(const ParamT... Params) const
 	{
-		using test = apply_parameters_t<arg_type, ParamT...>;
+		using test = Argument::apply_parameters_t<arg_type, ParamT...>;
 
 		return assign_vars_impl(std::tuple{Params...}, test{});
 	}
 };
-
-// TODO convert this into a format context
-template <typename... ArgsT>
-constexpr inline auto make_format_args(ArgsT... Args)
-{
-	return format_args<ArgsT...>(Args...);
-}
 
 template <typename Array, typename TypeIndexes>
 struct format_args_converter;
@@ -470,22 +432,66 @@ struct format_args_converter<Variant, std::integer_sequence<IndexT, TypeIndexes.
 	using type = format_args<std::variant_alternative_t<TypeIndexes, Variant>...>;
 };
 
-template <typename TypeIndexes>
-using default_format_args = typename format_args_converter<format_arg::base, TypeIndexes>::type;
+// TODO Fix this as it sorta works
+template <auto *Str, auto Arg, typename Head, typename... Tail>
+static inline constexpr auto parse_variable()
+{
+	constexpr const char *start = Str->data;
+	constexpr auto make_str_view = [start](fixed_string_view view)
+	{
+		return std::string_view(start + view.offset, view.size);
+	};
+
+	if constexpr (!Arg.is_var)
+	{
+		constexpr std::size_t constantSize = Arg.get_constant().size;
+
+		return constant<constantSize>(make_str_view(Arg.get_constant()));
+	}
+	else if constexpr (Head::str_match(make_str_view(Arg.type)))
+	{
+		auto str_view = make_str_view(Arg.name);
+		return Head(ELFHash(str_view.data(), str_view.size()), make_str_view(Arg.attribute));
+	}
+	// else if constexpr (Arg.type.empty())
+	// {
+	// 	auto str_view = make_str_view(Arg.name);
+	// 	return unspecified<0>(ELFHash(str_view.data(), str_view.size()));
+	// }
+	else if constexpr (sizeof...(Tail) > 0)
+	{
+		return parse_variable<Str, Arg, Tail...>();
+	}
+	else
+	{
+		// constexpr std::size_t attributeSize = Arg.Attribute.size;
+
+		return unspecified<0>(Arg);
+	}
+}
+
+template <auto *Str, auto ArgViewArray, typename variables_list = basic_variables, typename Indicies = std::make_index_sequence<ArgViewArray.size()>>
+struct arg_processor;
+
+template <auto *Str, auto ArgViewArray, typename... variables_list, typename IndexT, IndexT... Indicies>
+struct arg_processor<Str, ArgViewArray, std::tuple<variables_list...>, std::integer_sequence<IndexT, Indicies...>>
+{
+	constexpr auto operator()()
+	{
+		return format_args((parse_variable<Str, ArgViewArray[Indicies], variables_list...>())...);
+	};
+};
 
 template <Fixed_String... SubStrs>
 struct format_string
 {
 	static constexpr Fixed_String str{SubStrs...};
 
-	// This cannot be moved to a template parameter because of the pointer in std::string_view
 	static constexpr auto arg_array_obj = arg_array<count_vars(str)>(str);
 
-	using type_indices = to_integer_sequence_t<arg_array_obj.get_type_indices()>;
-	using var_indices = to_integer_sequence_t<arg_array_obj.get_var_indices()>;
-	using args_type = default_format_args<type_indices>;
+	using arg_array_processor = arg_processor<&str, arg_array_obj>;
 
-	static constexpr args_type args = args_type(arg_array_obj, type_indices());
+	static constexpr auto args = arg_array_processor()();
 };
 
 // Temporary
