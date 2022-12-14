@@ -120,8 +120,7 @@ template <typename T, std::size_t N>
 struct Array_Wrapper<std::array<T, N>> : Array_Wrapper_Base<T, N>
 {};
 
-template <std::size_t N>
-requires(N > 0)
+template <std::size_t N> requires(N > 0)
 struct Fixed_String : Fixed_Array_Base<char, N>
 {
   public:
@@ -227,52 +226,49 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 #endif
 };
 
-// template <auto *BasePtr>
+template <auto *BasePtr>
 struct fixed_string_view
 {
-	// using base_type = std::decay_t<decltype(*BasePtr)>;
-	std::size_t offset;
-	std::size_t size;
+	std::size_t m_offset;
+	std::size_t m_size;
 
 	constexpr fixed_string_view()
-		: size(0), offset(0) {}
-	// constexpr fixed_string_view(const char** ptr)
-	// 	: ptr(ptr), size(0), offset(0) {}
+		: m_size(0), m_offset(0) {}
 
-	explicit constexpr fixed_string_view(std::size_t offset, std::size_t size)
-		: offset(offset), size(size) {}
+	explicit constexpr fixed_string_view(std::size_t m_offset, std::size_t size)
+		: m_offset(m_offset), m_size(size) {}
 	
 	constexpr fixed_string_view(std::size_t size)
-		: offset(0), size(size) {}
+		: m_offset(0), m_size(size) {}
 
-	// constexpr fixed_string_view(const char * ptr, std::size_t size)
-	// 	: offset(ptr - BasePtr), size(size){}
+	constexpr fixed_string_view(const char * ptr, std::size_t size)
+		: m_offset(ptr - *BasePtr), m_size(size){}
 
-	// constexpr fixed_string_view(const std::string_view _view)
-	// 	: fixed_string_view(_view.data(), _view.size()){}
-		// offset(_view.data() - BasePtr->to_char_ptr()), size(_view.size()) {}
+	constexpr fixed_string_view(const std::string_view _view)
+		: fixed_string_view(_view.data(), _view.size()){}
 
 	constexpr fixed_string_view(fixed_string_view &&obj)
-		: fixed_string_view(obj.offset, obj.size) {}
+		: fixed_string_view(obj.m_offset, obj.size()) {}
 	constexpr fixed_string_view(const fixed_string_view &obj)
-		: fixed_string_view(obj.offset, obj.size) {}
+		: fixed_string_view(obj.m_offset, obj.size()) {}
 
-	// constexpr const char *end() const noexcept { return *BasePtr + offset + size; }
-	// constexpr const char *begin() const noexcept { return *BasePtr + offset; }
+	// constexpr const char *end() const noexcept { return *BasePtr + m_offset + size; }
+	// constexpr const char *begin() const noexcept { return *BasePtr + m_offset; }
 
-	// const char* ptr(){ return *BasePtr; }
+	static constexpr const char* data(){ return *BasePtr; }
+	constexpr std::size_t size() const { return m_size; }
 
 	constexpr const fixed_string_view operator=(const fixed_string_view obj)
 	{
-		offset = obj.offset;
-		size = obj.size;
+		m_offset = obj.m_offset;
+		m_size = obj.size();
 		return *this;
 	}
 	
-	// constexpr std::string_view to_string_view() const noexcept { return std::string_view(*BasePtr + offset, size); }
-	// constexpr operator std::string_view() const noexcept { return to_string_view(); }
+	constexpr std::string_view to_string_view() const noexcept { return std::string_view(*BasePtr + m_offset, m_size); }
+	constexpr operator std::string_view() const noexcept { return to_string_view(); }
 
-	constexpr bool empty() const noexcept{return size == 0;} 
+	constexpr bool empty() const noexcept{return m_size == 0;} 
 };
 
 #ifdef CTRE_V2__CTRE__HPP
