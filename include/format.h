@@ -32,7 +32,32 @@ struct constant
 	constexpr constant(std::string_view view)
 		: str(view)
 	{}
+	constexpr constant(auto... views)
+		: str(views...)
+	{}
+
+	constexpr auto operator()(auto &stream) const
+	{
+		stream << str;
+	}
 };
+
+namespace detail
+{
+
+template <typename T>
+struct is_format_constant : std::false_type
+{};
+
+template <std::size_t N>
+struct is_format_constant<constant<N>> : std::true_type
+{};
+
+} // namespace detail
+
+template <typename T>
+concept format_constant = detail::is_format_constant<T>::value;
+
 struct string;
 
 template <typename FixedStringView>
@@ -63,6 +88,11 @@ template <std::size_t N>
 struct unspecified
 {
 	constexpr unspecified(std::size_t id_hash, std::string_view type, std::string_view fmt_str){};
+
+	constexpr auto operator()(auto &stream, auto string) const
+	{
+		stream << static_cast<std::string>(string);
+	}
 };
 
 template <>
@@ -70,6 +100,11 @@ struct unspecified<0>
 {
 	template <typename FixedStringView>
 	constexpr unspecified(parsed_string<FixedStringView> str){};
+
+	constexpr auto operator()(auto &stream, auto string) const
+	{
+		stream << static_cast<std::string>(string);
+	}
 };
 
 template <typename Output, Fixed_String Type_Str = "">
@@ -104,7 +139,12 @@ struct variable<string> :
 	template <std::size_t N>
 	constexpr auto operator()(Fixed_String<N> str) const
 	{
-		return constant<N - 1>(str);
+		return constant<N - 1 + 2>('\"', str, '\"');
+	}
+
+	constexpr auto operator()(auto &stream, auto string) const
+	{
+		stream << '\"' << static_cast<std::string>(string) << '\"';
 	}
 };
 
@@ -163,11 +203,6 @@ struct parsed_string_array
 
 	consteval parsed_string_array(const std::string_view str)
 	{
-		// auto make_view = [&str](std::size_t ptr, std::size_t size)
-		// {
-		// 	return fixed_view(ptr, size);
-		// };
-
 		auto assign_const = [](auto &itt, auto start, auto end)
 		{
 			fixed_view const_str(start, end - start);
@@ -227,6 +262,9 @@ struct parsed_string_array
 	constexpr const_reference operator[](std::size_t Index) const { return args[Index]; }
 };
 
+template <typename... ArgsT>
+struct format_args;
+
 namespace Argument
 {
 
@@ -235,24 +273,54 @@ struct container_iterator;
 
 struct to_many_parameters;
 
-template <typename T, std::size_t N = 0>
+template <typename T, std::size_t N = 0, std::size_t... Ns>
 struct getter
 {
 	template <typename ContainerT>
 	constexpr inline auto operator()(const ContainerT &container) const
-	// requires(std::is_same_v<T, std::tuple_element_t<ContainerT, N>>)
 	{
 		return std::get<N>(container);
+	}
+
+	template <typename ContainerT>
+	constexpr inline auto operator()(auto &outputStream, const ContainerT &container) const
+	{
+		return std::get<N>(container);
+	}
+};
+template <typename... ArgsT, std::size_t N, std::size_t N2>
+struct getter<format_args<ArgsT...>, N, N2>
+{
+	template <typename ContainerT>
+	constexpr inline auto operator()(const ContainerT &container) const
+	{
+		const auto &base_container = std::get<N>(container);
+
+		return get<N2>(base_container);
+	}
+	template <typename ContainerT>
+	constexpr inline auto operator()(auto &outputStream, const ContainerT &container) const
+	{
+		const auto &base_container = std::get<N>(container);
+		return get<N2>(base_container);
 	}
 };
 
 template <typename ArgGetter, typename ParamGetter>
 struct processor
 {
+	constexpr void operator()(auto &outputStream, const auto &args, const auto &params) const
+	{
+		const auto &arg = ArgGetter{}(args);
+		const auto &param = ParamGetter{}(params);
+
+		arg(outputStream, param);
+	}
+
 	constexpr auto operator()(const auto &args, const auto &params) const
 	{
-		const auto &arg = ArgGetter()(args);
-		const auto &param = ParamGetter()(params);
+		const auto &arg = ArgGetter{}(args);
+		const auto &param = ParamGetter{}(params);
 
 		return arg(param);
 	}
@@ -261,7 +329,25 @@ struct processor
 template <typename ArgGetter>
 struct processor<ArgGetter, ignore_t>
 {
+	constexpr void operator()(auto &outputStream, const auto &args, const auto &) const
+	{
+		const auto &arg = ArgGetter{}(args);
+		arg(outputStream);
+	}
+
 	constexpr auto operator()(const auto &args, const auto &) const { return ArgGetter()(args); }
+};
+
+template <typename ParamGetter>
+struct processor<ignore_t, ParamGetter>
+{
+	constexpr void operator()(auto &outputStream, const auto &, const auto &params) const
+	{
+		const auto &param = ParamGetter{}(params);
+		param(outputStream);
+	}
+
+	constexpr auto operator()(const auto &, const auto &params) const { return ParamGetter()(params); }
 };
 
 // get_processor uses type deduction to determine which argument is being processed and whether the parameter should be consumed
@@ -280,12 +366,33 @@ struct get_processor
 };
 
 // The argument is a constant so we just increment the arg Index
-template <std::size_t N, typename Param, std::size_t ArgIndex, std::size_t ParamIndex>
-struct get_processor<constant<N>, Param, ArgIndex, ParamIndex>
+template <format_constant Arg, typename Param, std::size_t ArgIndex, std::size_t ParamIndex>
+struct get_processor<Arg, Param, ArgIndex, ParamIndex>
 {
-	using processor_type = processor<getter<constant<N>, ArgIndex>, ignore_t>;
+	using processor_type = processor<getter<Arg, ArgIndex>, ignore_t>;
 
 	using next_iterator = container_iterator<ArgIndex + 1, ParamIndex>;
+};
+
+template <typename TupleLikeT, typename IndexSeq, std::size_t N>
+struct create_processor_type_sequence;
+
+template <typename... ParamsT, typename IndexT, IndexT... Indicies, std::size_t N>
+struct create_processor_type_sequence<format_args<ParamsT...>, std::integer_sequence<IndexT, Indicies...>, N>
+{
+	using type = type_sequence<processor<ignore_t, getter<format_args<ParamsT...>, N, Indicies>>...>;
+};
+
+template <typename Arg, typename... ParamsT, std::size_t ArgIndex, std::size_t ParamIndex>
+	requires(!format_constant<Arg>)
+struct get_processor<Arg, format_args<ParamsT...>, ArgIndex, ParamIndex>
+{
+	using indicies = std::make_index_sequence<sizeof...(ParamsT)>;
+
+	using processor_type = typename create_processor_type_sequence<format_args<ParamsT...>, indicies, ParamIndex>::type;
+	static_assert(std::tuple_size_v<processor_type> == sizeof...(ParamsT), "Parameters Lost");
+
+	using next_iterator = container_iterator<ArgIndex + 1, ParamIndex + 1>;
 };
 
 //
@@ -298,20 +405,18 @@ struct apply_parameters
 };
 
 template <typename Arguments, typename Parameters, typename Results, std::size_t ArgIndex, std::size_t ParamIndex>
-	requires (std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex)
-struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
+requires(std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex) struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
 {
-	using type = to_many_parameters;
+	static_assert((std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex), "Too Many Parameters");
 };
 
 template <typename Arguments, typename Parameters, typename Results, std::size_t ArgIndex, std::size_t ParamIndex>
-	requires (std::tuple_size_v<Arguments> > ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex)
-struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
+requires(std::tuple_size_v<Arguments> > ArgIndex) && (std::tuple_size_v<Parameters> >= ParamIndex) struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
 {
 	using argument = std::tuple_element_t<ArgIndex, Arguments>;
-	using parameter = std::tuple_element_t<ParamIndex, Parameters>;
+	using parameter = std::conditional_t<(std::tuple_size_v<Parameters> == ParamIndex), ignore_t, std::tuple_element<ParamIndex, Parameters>>;
 
-	using result_data = get_processor<argument, parameter, ArgIndex, ParamIndex>;
+	using result_data = get_processor<argument, typename parameter::type, ArgIndex, ParamIndex>;
 	using result = typename result_data::processor_type;
 
 	using results = concat_t<Results, result>;
@@ -321,9 +426,9 @@ struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIn
 };
 
 } // namespace Argument
-
 template <typename Arguments, typename... Params>
-using apply_argument_parameters = typename Argument::apply_parameters<Arguments, std::tuple<Params...>, type_sequence<>, Argument::container_iterator<0, 0>>::type;
+using apply_argument_parameters =
+	typename Argument::apply_parameters<Arguments, std::tuple<Params...>, type_sequence<>, Argument::container_iterator<0, 0>>::type;
 
 template <typename... ArgsT>
 struct format_args
@@ -336,34 +441,47 @@ struct format_args
 		: args{Args...}
 	{}
 
-	// constructor 2
-	template <typename T, T... VariantIndex, T... Index>
-	constexpr format_args(const indexable<T> auto ArgArray, integer_sequence<T, VariantIndex...>, integer_sequence<T, Index...>)
-		: format_args(std::get<VariantIndex>(ArgArray[Index])...)
-	{}
-
-	// constructor 3
-	template <typename T, T... VariantIndicies>
-	constexpr format_args(const indexable<T> auto ArgArray, integer_sequence<T, VariantIndicies...> integer_seq)
-		: format_args(ArgArray, integer_seq, std::make_index_sequence<ArgArray.size()>{})
-	{}
-
 	template <typename ParamIterator, typename... Getters>
 	constexpr auto assign_vars_impl(const ParamIterator parameters, type_sequence<Getters...>) const
 	{
+		// TODO simplify the return types here
+		//  using return_types = std::tuple<decltype(Getters{}(args, parameters))...>;
+		//  using mergedResults = typename Argument::merge_constants<return_types, type_sequence<Getters...>>::type;
+		//  return_types().t;
+
 		return ::format_args(Getters{}(args, parameters)...);
 	}
 
 	template <typename... ParamT>
 	constexpr auto assign_vars(const ParamT... Params) const
 	{
-		using ResultArgs = apply_argument_parameters<arg_type, ParamT...>;
+		static_assert(sizeof...(ParamT) != 0, "Parameters Must Not Be Empty");
+		using result_sequence = apply_argument_parameters<arg_type, ParamT...>;
 
-		return assign_vars_impl(std::tuple{Params...}, ResultArgs{});
+		return assign_vars_impl(std::tuple{Params...}, result_sequence{});
+	}
+
+	template <typename ParamTuple, typename... Getters>
+	constexpr auto output_impl(auto &stream, const ParamTuple parameters, type_sequence<Getters...>)
+	{
+		(Getters{}(stream, args, parameters), ...);
+	}
+
+	template <typename... ParamT>
+	constexpr auto output(auto &stream, const ParamT... Params)
+	{
+		using result_sequence = apply_argument_parameters<arg_type, ParamT...>;
+		return output_impl(stream, std::tuple{Params...}, result_sequence{});
 	}
 };
 
-// TODO Fix this as it sorta works
+template <std::size_t I, class... Types>
+constexpr auto get(const format_args<Types...> &fmt_args) noexcept -> const std::tuple_element_t<I, typename format_args<Types...>::arg_type> &
+{
+	return get<I>(fmt_args.args);
+}
+
+//  TODO Fix this as it sorta works
 template <typename FixedStringViewT, auto Arg, typename Head, typename... Tail>
 static inline constexpr auto parse_variable()
 {
@@ -410,7 +528,7 @@ struct arg_processor<ArgViewArray, std::tuple<variables_list...>, std::integer_s
 template <Fixed_String... SubStrs>
 struct format_string
 {
-	static constexpr Fixed_String str{SubStrs...};
+	static constexpr Fixed_String str = make_fixed_string<SubStrs...>();
 
 	static constexpr auto parsed_string_array_obj = parsed_string_array<fixed_string_view<&str.data>, count_vars(str)>(str);
 

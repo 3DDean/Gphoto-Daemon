@@ -36,6 +36,7 @@ struct index_finder<Index, T, Head, Tail...> : std::conditional_t<std::is_same_v
 template <std::size_t Index, typename T>
 struct index_finder<Index, T> : std::integral_constant<type_not_found, type_not_found{}>
 {};
+
 // Find index of
 template <typename T, typename Container>
 struct index_of;
@@ -60,9 +61,12 @@ struct contains
 	constexpr operator value_type() const noexcept { return value; }
 	constexpr value_type operator()() const noexcept { return value; }
 };
+
 // } // namespace pp_container
 struct ignore_t
-{};
+{
+	using type = ignore_t;
+};
 
 inline constexpr ignore_t ignore;
 
@@ -72,9 +76,16 @@ concept indexable = requires(T obj, ArgsT... args)
 	obj.operator[](args...);
 };
 
-template<typename... ArgsT>
+template <typename... ArgsT>
 struct type_sequence
 {};
+
+namespace std
+{
+	template<typename... ArgsT>
+	struct tuple_size<type_sequence<ArgsT...>>: std::integral_constant<std::size_t, sizeof...(ArgsT)>
+	{};
+};
 
 namespace pp_util
 {

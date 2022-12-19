@@ -10,7 +10,7 @@
 #endif
 
 // TODO look into replacing Fixed_Array with std::array
-template <typename T, std::size_t N> requires (N < 500)
+template <typename T, std::size_t N>
 struct Fixed_Array_Base
 {
 	using value_type = T;
@@ -70,6 +70,12 @@ struct Fixed_Array_Base
 	constexpr const_iterator begin() const noexcept { return data; }
 	constexpr iterator end() noexcept { return data + N; }
 	constexpr const_iterator end() const noexcept { return data + N; }
+
+	constexpr reference front() { return data[0]; };
+	constexpr const_reference front() const { return *data[0]; };
+
+	constexpr reference back() { return data[N - 1]; };
+	constexpr const_reference back() const { return data[N - 1]; };
 };
 
 template <typename T, std::size_t N>
@@ -88,43 +94,32 @@ struct Fixed_Array : Fixed_Array_Base<T, N>
 		: Fixed_Array_Base<T, N>(Args...)
 	{}
 };
-template <typename T, std::size_t N>
-struct Array_Wrapper_Base
-{
-	static constexpr size_t size = N;
-	using type = T;
-};
 
-// Figure out if I can remove this for something in the standard libary
 template <typename T>
-struct Array_Wrapper;
-
-template <typename... ArrT>
-constexpr size_t Array_Sum()
-{
-	return (Array_Wrapper<ArrT>::size + ...);
-}
-
-// template <typename T, typename... ArgsT>
-// Fixed_Array(const T &, const ArgsT &...) -> Fixed_Array<Array_Type<T>, Array_Sum<T, ArgsT...>()>;
+struct array_size;
 
 template <typename T, std::size_t N>
-struct Array_Wrapper<T[N]> : Array_Wrapper_Base<T, N>
+struct array_size<T[N]> :
+	public std::integral_constant<std::size_t, N>
 {};
 
 template <typename T, std::size_t N>
-struct Array_Wrapper<Fixed_Array<T, N>> : Array_Wrapper_Base<T, N>
+struct array_size<Fixed_Array<T, N>> :
+	public std::integral_constant<std::size_t, N>
 {};
 
 template <typename T, std::size_t N>
-struct Array_Wrapper<std::array<T, N>> : Array_Wrapper_Base<T, N>
+struct array_size<std::array<T, N>> :
+	public std::integral_constant<std::size_t, N>
 {};
 
-template <std::size_t N> requires(N > 0)
+template <typename T>
+inline constexpr std::size_t array_size_v = array_size<T>::value;
+
+template <std::size_t N>
 struct Fixed_String : Fixed_Array_Base<char, N>
 {
   public:
-
 	using iterator = std::string_view::iterator;
 
 	using Array = Fixed_Array_Base<char, N>;
@@ -179,8 +174,8 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 		copy(std::copy_n(_src, SrcN - 1, _dst), Args...);
 	}
 
-	template <size_t SrcN, typename... ArgsT>
-	inline static constexpr void copy(auto _dst, const std::string_view& _src, const ArgsT &...Args)
+	template <typename... ArgsT>
+	inline static constexpr void copy(auto _dst, const std::string_view &_src, const ArgsT &...Args)
 	{
 		copy(std::copy(_src.begin(), _src.end(), _dst), Args...);
 	}
@@ -189,18 +184,18 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 
 	constexpr const std::string_view to_string_view() const noexcept { return std::string_view(Array::data, N); }
 
-	constexpr const char * to_char_ptr() const noexcept { return Array::data; }
+	constexpr const char *to_char_ptr() const noexcept { return Array::data; }
 
 	constexpr operator std::string_view() const noexcept { return to_string_view(); }
-	constexpr operator const char * () const noexcept { return to_char_ptr(); }
+	constexpr operator const char *() const noexcept { return to_char_ptr(); }
 
 	constexpr iterator end() const noexcept { return to_string_view().end(); }
 	constexpr iterator begin() const noexcept { return to_string_view().begin(); }
 
 	constexpr bool operator==(const std::string_view &_str) const
 	{
-		//TODO check for null end character
-		if (_str.size() == N-1)
+		// TODO check for null end character
+		if (_str.size() == N - 1)
 		{
 			for (std::size_t i = 0; i < _str.size(); i++)
 			{
@@ -237,15 +232,15 @@ struct fixed_string_view
 
 	explicit constexpr fixed_string_view(std::size_t m_offset, std::size_t size)
 		: m_offset(m_offset), m_size(size) {}
-	
+
 	constexpr fixed_string_view(std::size_t size)
 		: m_offset(0), m_size(size) {}
 
-	constexpr fixed_string_view(const char * ptr, std::size_t size)
-		: m_offset(ptr - *BasePtr), m_size(size){}
+	constexpr fixed_string_view(const char *ptr, std::size_t size)
+		: m_offset(ptr - *BasePtr), m_size(size) {}
 
 	constexpr fixed_string_view(const std::string_view _view)
-		: fixed_string_view(_view.data(), _view.size()){}
+		: fixed_string_view(_view.data(), _view.size()) {}
 
 	constexpr fixed_string_view(fixed_string_view &&obj)
 		: fixed_string_view(obj.m_offset, obj.size()) {}
@@ -255,7 +250,7 @@ struct fixed_string_view
 	// constexpr const char *end() const noexcept { return *BasePtr + m_offset + size; }
 	// constexpr const char *begin() const noexcept { return *BasePtr + m_offset; }
 
-	static constexpr const char* data(){ return *BasePtr; }
+	static constexpr const char *data() { return *BasePtr; }
 	constexpr std::size_t size() const { return m_size; }
 
 	constexpr const fixed_string_view operator=(const fixed_string_view obj)
@@ -264,11 +259,11 @@ struct fixed_string_view
 		m_size = obj.size();
 		return *this;
 	}
-	
+
 	constexpr std::string_view to_string_view() const noexcept { return std::string_view(*BasePtr + m_offset, m_size); }
 	constexpr operator std::string_view() const noexcept { return to_string_view(); }
 
-	constexpr bool empty() const noexcept{return m_size == 0;} 
+	constexpr bool empty() const noexcept { return m_size == 0; }
 };
 
 #ifdef CTRE_V2__CTRE__HPP
@@ -298,14 +293,51 @@ static constexpr inline auto regex_iterator = ctre::iterator<regex>;
 #endif
 
 template <std::size_t N>
-struct Array_Wrapper<Fixed_String<N>> : Array_Wrapper_Base<char, N>
+struct array_size<Fixed_String<N>> :
+	public std::integral_constant<std::size_t, N>
 {};
 
-// TODO clean this up it's a mess
+template <typename T>
+inline constexpr auto string_size(const T &str)
+{
+	const std::size_t size = array_size_v<T>;
+	return (str[size - 1] != '\0') ? size : size - 1;
+};
+
+template <typename T, std::size_t N>
+inline constexpr auto string_start(const T (&str)[N])
+{
+	return str;
+};
+
+template <typename T>
+inline constexpr auto string_start(const T &str)
+{
+	return (char *)str.begin();
+};
+
 template <typename... ArgsT>
-requires((Array_Wrapper<ArgsT>::size > 0), ...)
-	Fixed_String(const ArgsT &...)
-->Fixed_String<(Array_Wrapper<ArgsT>::size + ...) - sizeof...(ArgsT) + 1>;
+requires((array_size_v<ArgsT> > 0), ...) Fixed_String(const ArgsT &...)
+->Fixed_String<(array_size_v<ArgsT> + ...) - sizeof...(ArgsT) + 1>;
+
+template <auto... Strings>
+static inline constexpr auto make_fixed_string()
+{
+	using fixed_string = Fixed_String<(string_size(Strings) + ...)>;
+	std::array<std::size_t, sizeof...(Strings)> string_sizes{string_size(Strings)...};
+	std::array<char *, sizeof...(Strings)> string_ptrs{string_start(Strings)...};
+
+	fixed_string output;
+
+	auto ptr_itt = string_ptrs.begin();
+	auto size_itt = string_sizes.begin();
+	char *current = output.data;
+	for (; ptr_itt < string_ptrs.end(); ptr_itt++, size_itt++)
+	{
+		current = std::copy_n(*ptr_itt, *size_itt, current);
+	}
+	return output;
+};
 
 #ifdef CTRE_V2__CTRE__HPP
 namespace ctll
