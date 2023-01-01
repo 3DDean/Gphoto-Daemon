@@ -42,9 +42,6 @@ struct constant
 	}
 };
 
-namespace detail
-{
-
 template <typename T>
 struct is_format_constant : std::false_type
 {};
@@ -53,10 +50,8 @@ template <std::size_t N>
 struct is_format_constant<constant<N>> : std::true_type
 {};
 
-} // namespace detail
-
 template <typename T>
-concept format_constant = detail::is_format_constant<T>::value;
+concept format_constant = is_format_constant<T>::value;
 
 struct string;
 
@@ -69,15 +64,30 @@ struct parsed_string
 	constexpr parsed_string()
 		: is_var(true), type(), name(), attribute() {}
 
-	constexpr parsed_string(const fixed_view type, const fixed_view name, const fixed_view attribute)
-		: is_var(true), type(type), name(name), attribute(attribute)
+	constexpr parsed_string(bool is_var, const fixed_view type, const fixed_view name, const fixed_view attribute)
+		: is_var(is_var), type(type), name(name), attribute(attribute)
 	{}
 
-	constexpr parsed_string(fixed_view const_str)
-		: is_var(false), attribute(const_str)
+	constexpr parsed_string(bool is_var, const fixed_view const_str)
+		: is_var(is_var), attribute(const_str)
 	{}
 
 	constexpr auto get_constant() const { return attribute; }
+
+	static constexpr parsed_string make_variable(const fixed_view type, const fixed_view name, const fixed_view attribute)
+	{
+		return parsed_string(true, type, name, attribute);
+	}
+
+	static constexpr parsed_string make_variable(const fixed_view name)
+	{
+		return parsed_string(true, fixed_view(), name, fixed_view());
+	}
+
+	static constexpr parsed_string make_constant(const fixed_view const_str)
+	{
+		return parsed_string(false, const_str);
+	}
 
 	fixed_view type;
 	fixed_view name;
@@ -104,6 +114,10 @@ struct unspecified<0>
 	constexpr auto operator()(auto &stream, auto string) const
 	{
 		stream << static_cast<std::string>(string);
+	}
+	constexpr auto operator()(auto &stream, std::string_view string) const
+	{
+		stream << string;
 	}
 };
 
@@ -158,6 +172,10 @@ struct variable<int> :
 	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
 		: base(id_hash)
 	{}
+	constexpr auto operator()(auto &stream, const int value) const
+	{
+		stream << std::to_string(value);
+	}
 };
 
 template <>
@@ -170,12 +188,36 @@ struct variable<float> :
 	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
 		: base(id_hash)
 	{}
+	
+	constexpr auto operator()(auto &stream, const float value) const
+	{
+		stream << std::to_string(value);
+	}
+};
+
+template <>
+struct variable<bool> :
+	variable_base<variable<bool>, "bool">
+{
+	using base = variable_base<variable<bool>, "bool">;
+	using base::base;
+	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
+		: base(id_hash)
+	{}
+	constexpr auto operator()(auto &stream, const int value) const
+	{
+		stream << std::to_string(value);
+	}
+	constexpr auto operator()(auto &stream, const bool value) const
+	{
+		stream << std::to_string(value);
+	}
 };
 
 template <typename... Types>
 using tuple_variable_wrapper = std::tuple<variable<Types>...>;
 
-using basic_variables = tuple_variable_wrapper<string, int, float>;
+using basic_variables = tuple_variable_wrapper<string, int, float, bool>;
 
 static inline constexpr Fixed_String variable_regex = "\\$\\{(.+?)\\}";
 static inline constexpr Fixed_String attribute_regex = "(.+):(.+(:.+)?)";
@@ -192,22 +234,24 @@ struct parsed_string_array
 	using parsed_string_type = parsed_string<fixed_view>;
 	using args_array = array<parsed_string_type>;
 
-	using arg_iterator_const = typename args_array::const_iterator;
-
 	args_array args;
+	std::size_t m_size;
 
 	using value_type = typename args_array::value_type;
 	using const_reference = typename args_array::const_reference;
 
-	constexpr std::size_t size() const { return args.size(); }
+	constexpr std::size_t size() const { return m_size; }
 
 	consteval parsed_string_array(const std::string_view str)
 	{
 		auto assign_const = [](auto &itt, auto start, auto end)
 		{
 			fixed_view const_str(start, end - start);
-			*itt = parsed_string_type(const_str);
-			++itt;
+			if (const_str.size() > 0)
+			{
+				*itt = parsed_string_type::make_constant(const_str);
+				++itt;
+			}
 		};
 
 		auto assign_arg = [&str](auto &itt, auto var_str)
@@ -217,7 +261,9 @@ struct parsed_string_array
 			if (var_str.end() < str.data() + str.size())
 			{
 				if (!match)
-					*itt = parsed_string_type(var_str);
+				{
+					*itt = parsed_string_type::make_variable(var_str);
+				}
 				else
 				{
 					fixed_view type_view(type_match.to_view());
@@ -227,7 +273,7 @@ struct parsed_string_array
 					if (attributes_match)
 						attributes_view = fixed_view(attributes_match.to_view());
 
-					*itt = parsed_string_type(type_view, name_view, attributes_view);
+					*itt = parsed_string_type::make_variable(type_view, name_view, attributes_view);
 				}
 			}
 			++itt;
@@ -246,17 +292,8 @@ struct parsed_string_array
 
 		if (const_start < str.end())
 			assign_const(output_itt, const_start, str.end());
-	}
 
-	template <typename ArrayT>
-	constexpr auto iterate_args(auto action_func) const requires(std::invocable<decltype(action_func), typename ArrayT::reference, typename args_array::const_reference>)
-	{
-		ArrayT indices;
-
-		for (auto arg = args.begin(), index = indices.begin(); arg < args.end(); arg++, index++)
-			action_func(*index, *arg);
-
-		return indices;
+		m_size = output_itt - args.begin();
 	}
 
 	constexpr const_reference operator[](std::size_t Index) const { return args[Index]; }
@@ -296,7 +333,7 @@ struct getter<format_args<ArgsT...>, N, N2>
 	{
 		const auto &base_container = std::get<N>(container);
 
-		return get<N2>(base_container);
+		return std::get<N2>(base_container.args);
 	}
 	template <typename ContainerT>
 	constexpr inline auto operator()(auto &outputStream, const ContainerT &container) const
@@ -405,13 +442,15 @@ struct apply_parameters
 };
 
 template <typename Arguments, typename Parameters, typename Results, std::size_t ArgIndex, std::size_t ParamIndex>
-requires(std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex) struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
+	requires(std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex)
+struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
 {
 	static_assert((std::tuple_size_v<Arguments> == ArgIndex) && (std::tuple_size_v<Parameters> > ParamIndex), "Too Many Parameters");
 };
 
 template <typename Arguments, typename Parameters, typename Results, std::size_t ArgIndex, std::size_t ParamIndex>
-requires(std::tuple_size_v<Arguments> > ArgIndex) && (std::tuple_size_v<Parameters> >= ParamIndex) struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
+	requires(std::tuple_size_v<Arguments> > ArgIndex) && (std::tuple_size_v<Parameters> >= ParamIndex)
+struct apply_parameters<Arguments, Parameters, Results, container_iterator<ArgIndex, ParamIndex>>
 {
 	using argument = std::tuple_element_t<ArgIndex, Arguments>;
 	using parameter = std::conditional_t<(std::tuple_size_v<Parameters> == ParamIndex), ignore_t, std::tuple_element<ParamIndex, Parameters>>;
@@ -426,14 +465,20 @@ requires(std::tuple_size_v<Arguments> > ArgIndex) && (std::tuple_size_v<Paramete
 };
 
 } // namespace Argument
+
 template <typename Arguments, typename... Params>
 using apply_argument_parameters =
 	typename Argument::apply_parameters<Arguments, std::tuple<Params...>, type_sequence<>, Argument::container_iterator<0, 0>>::type;
+
+template<std::size_t Max, std::size_t Count>
+concept less_or_equal_to = Max >= Count;
 
 template <typename... ArgsT>
 struct format_args
 {
 	using arg_type = std::tuple<ArgsT...>;
+	static constexpr std::size_t param_count = (((is_format_constant<ArgsT>::value) ? 0 : 1) + ...);
+
 	arg_type args;
 
 	// constructor 1
@@ -462,27 +507,21 @@ struct format_args
 	}
 
 	template <typename ParamTuple, typename... Getters>
-	constexpr auto output_impl(auto &stream, const ParamTuple parameters, type_sequence<Getters...>)
+	constexpr auto output_impl(auto &stream, const ParamTuple parameters, type_sequence<Getters...>) const
 	{
 		(Getters{}(stream, args, parameters), ...);
 	}
 
 	template <typename... ParamT>
-	constexpr auto output(auto &stream, const ParamT... Params)
+	constexpr auto output(auto &stream, const ParamT... Params) const requires (less_or_equal_to<sizeof...(ParamT), param_count>)
+	// (param_count >= sizeof...(ParamT))
 	{
 		using result_sequence = apply_argument_parameters<arg_type, ParamT...>;
 		return output_impl(stream, std::tuple{Params...}, result_sequence{});
 	}
 };
 
-template <std::size_t I, class... Types>
-constexpr auto get(const format_args<Types...> &fmt_args) noexcept -> const std::tuple_element_t<I, typename format_args<Types...>::arg_type> &
-{
-	return get<I>(fmt_args.args);
-}
-
-//  TODO Fix this as it sorta works
-template <typename FixedStringViewT, auto Arg, typename Head, typename... Tail>
+template <typename FixedStringViewT, parsed_string Arg, typename Head, typename... Tail>
 static inline constexpr auto parse_variable()
 {
 	if constexpr (!Arg.is_var)
@@ -507,6 +546,7 @@ static inline constexpr auto parse_variable()
 	}
 	else
 	{
+		static_assert(Arg.type.size() == 0, "Type was specified, but not found");
 		// constexpr std::size_t attributeSize = Arg.Attribute.size;
 
 		return unspecified<0>(Arg);
@@ -530,12 +570,16 @@ struct format_string
 {
 	static constexpr Fixed_String str = make_fixed_string<SubStrs...>();
 
-	static constexpr auto parsed_string_array_obj = parsed_string_array<fixed_string_view<&str.data>, count_vars(str)>(str);
+	static constexpr auto args = arg_processor<parsed_string_array<fixed_string_view<&str.data>, count_vars(str)>(str)>()();
+	constexpr format_string(){}
 
-	using parsed_string_array_processor = arg_processor<parsed_string_array_obj>;
-
-	static constexpr auto args = parsed_string_array_processor()();
+	constexpr auto operator()(auto&&... params)
+	{
+		args.output(params...);
+	}
 };
+
+
 
 // Temporary
 template <Fixed_String Str>

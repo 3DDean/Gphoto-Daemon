@@ -1,5 +1,6 @@
 #pragma once
 #include "Fixed_Array.h"
+#include "format.h"
 #include "formater.h"
 #include "gphoto-error.h"
 #include "tuple.h"
@@ -13,9 +14,8 @@ struct unused_t
 {};
 static constexpr unused_t unused;
 
-template<auto T>
+template <auto T>
 using remove_unused_const = std::conditional_t<std::same_as<decltype(T), const unused_t>, unused_t, decltype(T)>;
-
 
 template <typename T>
 static inline constexpr bool is_unused = std::is_same_v<T, unused_t>;
@@ -89,13 +89,22 @@ struct accessor_base : accessor_traits_base<remove_unused_const<Getter>, remove_
 	using typename accessor_traits::getter_func;
 	using typename accessor_traits::setter_func;
 
-
 	constexpr void operator()(parent_type base_obj, member_type value) requires(std::invocable<decltype(Setter), parent_type, member_type>)
 	{
 		Setter(base_obj, value);
 	}
 
 	constexpr auto operator()(parent_type base_obj) const requires(std::invocable<decltype(Getter), parent_type>)
+	{
+		return Getter(base_obj);
+	}
+
+	constexpr void set(parent_type base_obj, member_type value) requires(std::invocable<decltype(Setter), parent_type, member_type>)
+	{
+		Setter(base_obj, value);
+	}
+
+	constexpr auto get(parent_type base_obj) const requires(std::invocable<decltype(Getter), parent_type>)
 	{
 		return Getter(base_obj);
 	}
@@ -127,6 +136,7 @@ struct array_accessor
 	}
 };
 
+// Cause of the clang crash
 template <typename MemberT, typename AccessorT>
 static inline constexpr void check_type(AccessorT)
 {
@@ -147,7 +157,6 @@ static consteval inline auto get_consteval(auto accessors)
 template <typename... ArgsT>
 struct member_accessors
 {
-	// static constexpr std::array<std::string_view, sizeof...(ArgsT)> member_names{ArgsT::name_str...};
 	using member_tuple = std::tuple<typename ArgsT::member_type...>;
 
 	static constexpr std::tuple<ArgsT...> accessors{};
@@ -163,15 +172,16 @@ struct member_accessors
 	template <typename parent_type>
 	static constexpr inline member_tuple get_members(parent_type base_obj) requires(std::invocable<ArgsT, parent_type> &&...)
 	{
-		return member_tuple{get_consteval<ArgsT>(accessors).operator()(base_obj)...};
-		// return get_members(base_obj, std::make_index_sequence<sizeof...(ArgsT)>());
+		return member_tuple{std::get<ArgsT>(accessors).operator()(base_obj)...};
+
+		// return get_members(base_obj, std::make_index_sequence<sizeof...(ArgsT)>{});
 	}
 
   private:
-	template <typename T, T... index>
-	static constexpr inline member_tuple get_members(auto base_obj, std::integer_sequence<T, index...>)
+	template <typename T, T... Index>
+	static constexpr inline member_tuple get_members(auto base_obj, std::integer_sequence<T, Index...>)
 	{
-		return member_tuple{get_consteval<index>(accessors).operator()(base_obj)...};
+		return member_tuple{std::get<Index>(accessors).operator()(base_obj)...};
 	}
 };
 
@@ -251,164 +261,268 @@ struct accessor<Getter, Setter> : accessor_base<Getter, Setter>
 	}
 };
 
-struct WidgetRange
+struct NoAttributes
 {
-	static constexpr Fixed_String label = "range";
-
-	void get(CameraWidget *widget)
+	void operator()(auto &output, CameraWidget *widget, uint32_t)
 	{
-		gp_error_check(gp_widget_get_range(widget, &min, &max, &increment));
 	}
-	void set(CameraWidget *widget, float low, float high, float incr)
-	{
-		min = low;
-		max = high;
-		increment = incr;
-
-		gp_error_check(gp_widget_set_range(widget, low, high, incr));
-	}
-
-	float min;
-	float max;
-	float increment;
 };
 
-struct WidgetChoices
+struct RangeAttributes
+{
+	using formatter = format_string<"${int:min}, ${int:max}, ${int:increment}">;
+	static constexpr Fixed_String label = "range";
+
+	void operator()(auto &output, CameraWidget *widget, uint32_t indent)
+	{
+	for (std::size_t i = 0; i < indent; i++)
+		output << " ";
+
+		float min;
+		float max;
+		float increment;
+
+		gp_error_check(gp_widget_set_range(widget, min, max, increment));
+
+		formatter format;
+		format(output, min, max, increment);
+	}
+};
+//TODO Add in a hash checker
+struct ChoicesAttributes
 {
 	using const_str = const char *;
 	static constexpr Fixed_String label = "choices";
 
-	void get(CameraWidget *widget)
+	void operator()(auto &output, CameraWidget *widget, uint32_t indent)
 	{
-		std::size_t newCount = gp_widget_count_choices(widget);
+		for (std::size_t i = 0; i < indent; i++)
+			output << " ";
+		std::size_t count = gp_widget_count_choices(widget);
 
-		if (choices != nullptr && newCount != count)
+		const_str choice;
+		gp_widget_get_choice(widget, 0, &choice);
+		output << "\"" << choice << "\"";
+		for (std::size_t i = 1; i < count; i++)
 		{
-			delete choices;
+			gp_widget_get_choice(widget, i, &choice);
+			output << ", \"" << choice << "\"";
 		}
-		count = newCount;
-		if (count != 0)
-		{
-			choices = new const_str[count];
-			for (std::size_t i = 0; i < count; i++)
-			{
-				gp_widget_get_choice(widget, i, &choices[i]);
-			}
-		}
-		else
-		{
-			choices = nullptr;
-		}
+		output << "\n";
 	}
-
-	std::size_t count;
-	const_str *choices = nullptr;
 };
 
 template <typename T>
 using WidgetValueProperty = T; //"value", T, gp_widget_get_value, gp_widget_set_value>;
 
 template <CameraWidgetType WidgetT, Fixed_String TypeStr, typename OtherProperties = std::tuple<>>
-struct gphoto_widget_common{};
+struct gphoto_widget_common
+{};
 
-template <CameraWidgetType WidgetType>
-struct gphoto_widget;
+#include "html_element.h"
+
+void iterate_choices(CameraWidget *widget, auto func)
+{
+	std::size_t count = gp_widget_count_choices(widget);
+
+	if (count != 0)
+	{
+		using const_str = const char *;
+
+		const_str *str;
+		for (std::size_t i = 0; i < count; i++)
+		{
+			gp_widget_get_choice(widget, i, str);
+			func(i, str);
+		}
+	}
+}
+
+template <CameraWidgetType>
+struct gphoto_widget
+{};
+
 /**< \brief Window widget*   This is the toplevel configuration widget. It should likely contain multiple #GP_WIDGET_SECTION entries. */
 template <>
-struct gphoto_widget<GP_WIDGET_WINDOW> :
-	gphoto_widget_common<GP_WIDGET_WINDOW, "window">
+struct gphoto_widget<GP_WIDGET_WINDOW>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"window">();
+	;
+	using value_type = void;
+	using attributes_accessor = NoAttributes;
+
+	// <div class=${str:class} id=${str:id} name=${str:name}>${array:members}</div>"
+	static constexpr Fixed_String htmlEquivalent = "tab_book";
 };
 /**< \brief Section widget (think Tab) */
 template <>
-struct gphoto_widget<GP_WIDGET_SECTION> :
-	gphoto_widget_common<GP_WIDGET_SECTION, "section">
+struct gphoto_widget<GP_WIDGET_SECTION>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"section">();
+	;
+	using value_type = void;
+	using attributes_accessor = NoAttributes;
+
+	static constexpr Fixed_String htmlEquivalent = "tab_page";
 };
 /**< \brief Text widget. */
 template <>
-struct gphoto_widget<GP_WIDGET_TEXT> :
-	gphoto_widget_common<GP_WIDGET_TEXT, "text", std::tuple<WidgetValueProperty<char *>>>
+struct gphoto_widget<GP_WIDGET_TEXT>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"text">();
+	;
+	using value_type = char *;
+	using attributes_accessor = NoAttributes;
 };
 /**< \brief Slider widget. */
 template <>
-struct gphoto_widget<GP_WIDGET_RANGE> :
-	gphoto_widget_common<GP_WIDGET_RANGE, "range", std::tuple<WidgetValueProperty<float>, WidgetRange>>
+struct gphoto_widget<GP_WIDGET_RANGE>
 {
-	// gp_widget_get_range
+	static constexpr Fixed_String type_str = make_fixed_string<"range">();
+	;
+	using value_type = float;
+	using attributes_accessor = RangeAttributes;
 };
+
 /**< \brief Toggle widget (think check box) */
 template <>
-struct gphoto_widget<GP_WIDGET_TOGGLE> :
-	gphoto_widget_common<GP_WIDGET_TOGGLE, "toggle", std::tuple<WidgetValueProperty<int>>>
+struct gphoto_widget<GP_WIDGET_TOGGLE>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"toggle">();
+	;
+	using value_type = int;
+	using attributes_accessor = NoAttributes;
 };
+
 /**< \brief Radio button widget. */
 template <>
-struct gphoto_widget<GP_WIDGET_RADIO> :
-	gphoto_widget_common<GP_WIDGET_RADIO, "radio", std::tuple<WidgetValueProperty<char *>, WidgetChoices>>
+struct gphoto_widget<GP_WIDGET_RADIO>
 {
-	// gp_widget_count_choices
+	static constexpr Fixed_String type_str = make_fixed_string<"radio">();
+	;
+	using value_type = char *;
+	using attributes_accessor = ChoicesAttributes;
 };
+
 /**< \brief Menu widget (same as RADIO). */
 template <>
-struct gphoto_widget<GP_WIDGET_MENU> :
-	gphoto_widget_common<GP_WIDGET_MENU, "menu", std::tuple<WidgetValueProperty<char *>, WidgetChoices>>
+struct gphoto_widget<GP_WIDGET_MENU>
 {
-	// gp_widget_count_choices
+	static constexpr Fixed_String type_str = make_fixed_string<"menu">();
+	;
+	using value_type = char *;
+	using attributes_accessor = ChoicesAttributes;
 };
 /**< \brief Button press widget. */
 template <>
-struct gphoto_widget<GP_WIDGET_BUTTON> :
-	gphoto_widget_common<GP_WIDGET_BUTTON, "button", std::tuple<WidgetValueProperty<CameraWidgetCallback>>>
+struct gphoto_widget<GP_WIDGET_BUTTON>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"button">();
+	;
+	using value_type = void;
+	using attributes_accessor = NoAttributes;
 };
 /**< \brief Date entering widget. */
 template <>
-struct gphoto_widget<GP_WIDGET_DATE> :
-	gphoto_widget_common<GP_WIDGET_DATE, "date", std::tuple<WidgetValueProperty<int>>>
+struct gphoto_widget<GP_WIDGET_DATE>
 {
+	static constexpr Fixed_String type_str = make_fixed_string<"date">();
+	;
+	using value_type = int;
+	using attributes_accessor = NoAttributes;
 };
 
-static inline constexpr std::array gp_widget_type_enum{
-	GP_WIDGET_WINDOW,
-	GP_WIDGET_SECTION,
-	GP_WIDGET_TEXT,
-	GP_WIDGET_RANGE,
-	GP_WIDGET_TOGGLE,
-	GP_WIDGET_RADIO,
-	GP_WIDGET_MENU,
-	GP_WIDGET_BUTTON,
-	GP_WIDGET_DATE};
-
-//Minimal crash for clang
-// using camera_widget_base_accessors = member_accessors<accessor<gp_widget_get_label>,
-// 													  named_type<"child_array", array_accessor<accessor<gp_widget_count_children>,
-// 																							   accessor<gp_widget_get_child>>>>;
-
-using camera_widget_base_accessors = member_accessors<named_type<"label", accessor<gp_widget_get_label>>,
-													  named_type<"name", accessor<gp_widget_get_name, gp_widget_set_name>>,
-													  named_type<"info", accessor<gp_widget_get_info, gp_widget_set_info>>,
-													  named_type<"id", accessor<gp_widget_get_id>>,
-													  named_type<"readonly", accessor<gp_widget_get_readonly, gp_widget_set_readonly>>,
-													  named_type<"changed", accessor<gp_widget_changed, gp_widget_set_changed>>,
-													  named_type<"widget_type", accessor<gp_widget_get_type>>,
-													  named_type<"child_array", array_accessor<accessor<gp_widget_count_children>,
-																							   accessor<gp_widget_get_child>>>>;
-
-using CommonPropertiesTypes = std::tuple<named_type<"label", const char *>,
-										 named_type<"name", const char *>,
-										 named_type<"info", const char *>,
-										 named_type<"id", int>,
-										 named_type<"readonly", int>,
-										 named_type<"changed", int>>;
-
-struct camera_widget
+auto get_widget_type(CameraWidget *cameraWidget)
 {
-	camera_widget(CameraWidget *ptr)
-		: ptr(ptr) {}
+	CameraWidgetType widgetType;
+	std::string_view type_str;
+	gp_widget_get_type(cameraWidget, &widgetType);
 
-  private:
-	CameraWidget *ptr;
-};
+	switch (widgetType)
+	{
+	case GP_WIDGET_WINDOW:
+		type_str = gphoto_widget<GP_WIDGET_WINDOW>::type_str;
+		break;
+	case GP_WIDGET_SECTION:
+		type_str = gphoto_widget<GP_WIDGET_SECTION>::type_str;
+		break;
+	case GP_WIDGET_TEXT:
+		type_str = gphoto_widget<GP_WIDGET_TEXT>::type_str;
+		break;
+	case GP_WIDGET_RANGE:
+		type_str = gphoto_widget<GP_WIDGET_RANGE>::type_str;
+		break;
+	case GP_WIDGET_TOGGLE:
+		type_str = gphoto_widget<GP_WIDGET_TOGGLE>::type_str;
+		break;
+	case GP_WIDGET_RADIO:
+		type_str = gphoto_widget<GP_WIDGET_RADIO>::type_str;
+		break;
+	case GP_WIDGET_MENU:
+		type_str = gphoto_widget<GP_WIDGET_MENU>::type_str;
+		break;
+	case GP_WIDGET_BUTTON:
+		type_str = gphoto_widget<GP_WIDGET_BUTTON>::type_str;
+		break;
+	case GP_WIDGET_DATE:
+		type_str = gphoto_widget<GP_WIDGET_DATE>::type_str;
+		break;
+	}
+
+	return std::pair<CameraWidgetType, std::string_view>(widgetType, type_str);
+}
+
+//Stupid solution, I will need to somehow merge this with get_widget_type, probably with a dedicated formatter class
+//custom formatter type for the formatter that selects each the appropiate widget
+//So each Widget_Type has it's own class and is called by the appropriate formatter
+auto get_widget_options(auto& output, CameraWidget *cameraWidget, uint32_t indent)
+{
+	CameraWidgetType widgetType;
+	gp_widget_get_type(cameraWidget, &widgetType);
+
+	switch (widgetType)
+	{
+	case GP_WIDGET_WINDOW:
+		gphoto_widget<GP_WIDGET_WINDOW>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_SECTION:
+		gphoto_widget<GP_WIDGET_SECTION>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_TEXT:
+		gphoto_widget<GP_WIDGET_TEXT>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_RANGE:
+		gphoto_widget<GP_WIDGET_RANGE>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_TOGGLE:
+		gphoto_widget<GP_WIDGET_TOGGLE>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_RADIO:
+		gphoto_widget<GP_WIDGET_RADIO>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_MENU:
+		gphoto_widget<GP_WIDGET_MENU>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_BUTTON:
+		gphoto_widget<GP_WIDGET_BUTTON>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	case GP_WIDGET_DATE:
+		gphoto_widget<GP_WIDGET_DATE>::attributes_accessor()(output, cameraWidget, indent);
+		break;
+	}
+}
+
+using gwidget_label = accessor<gp_widget_get_label>;
+using gwidget_name = accessor<gp_widget_get_name, gp_widget_set_name>;
+using gwidget_info = accessor<gp_widget_get_info, gp_widget_set_info>;
+
+using gwidget_id = accessor<gp_widget_get_id>;
+
+using gwidget_readonly = accessor<gp_widget_get_readonly, gp_widget_set_readonly>;
+using gwidget_changed = accessor<gp_widget_changed, gp_widget_set_changed>;
+
+using gwidget_widget_type = accessor<gp_widget_get_type>;
+
+using gwidget_child_array = array_accessor<accessor<gp_widget_count_children>, accessor<gp_widget_get_child>>;
+
+using widget_formatter = format_string<"${str:label}, ${str:name}, ${str:tooltip}, ${int:id}, ${bool:readonly}, ${bool:changed}, ${type}">;
