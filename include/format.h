@@ -8,6 +8,10 @@
 #include <ctre.hpp>
 #include <variant>
 #include <vector>
+
+template<std::size_t Value>
+concept must_not_be_zero = Value != 0;
+
 inline constexpr ignore_t placeholder;
 
 constexpr size_t count_vars(const std::string_view _str) noexcept
@@ -134,6 +138,7 @@ struct variable_base
 	{
 		return Type_Str == str;
 	}
+	
 };
 
 template <typename Output>
@@ -154,6 +159,11 @@ struct variable<string> :
 	constexpr auto operator()(Fixed_String<N> str) const
 	{
 		return constant<N - 1 + 2>('\"', str, '\"');
+	}
+	
+	constexpr auto operator()(auto &stream, const char* string) const
+	{
+		stream << '\"' << string << '\"';
 	}
 
 	constexpr auto operator()(auto &stream, auto string) const
@@ -223,14 +233,18 @@ static inline constexpr Fixed_String variable_regex = "\\$\\{(.+?)\\}";
 static inline constexpr Fixed_String attribute_regex = "(.+):(.+(:.+)?)";
 
 // TODO Make the assign lambdas skip over empty constants
-template <typename FixedStringView, std::size_t VarCount>
-struct parsed_string_array
+// template <typename FixedStringView, std::size_t VarCount = count_vars(FixedStringView::full_str())> requires(must_not_be_zero<VarCount>)
+// struct parsed_string_array 
+
+template <std::size_t N, const Fixed_String<N>& FixedStringView>
+struct parsed_string_array 
 {
+	static constexpr std::size_t VarCount = count_vars(FixedStringView);
 	template <typename T>
 	using array = Fixed_Array<T, count_args<VarCount>>;
 
 	// using parsed_string_type = parsed_string<StrPtr>;
-	using fixed_view = FixedStringView;
+	using fixed_view = fixed_string_view<FixedStringView>;
 	using parsed_string_type = parsed_string<fixed_view>;
 	using args_array = array<parsed_string_type>;
 
@@ -242,8 +256,10 @@ struct parsed_string_array
 
 	constexpr std::size_t size() const { return m_size; }
 
-	consteval parsed_string_array(const std::string_view str)
+	consteval parsed_string_array()
 	{
+		const std::string_view str = FixedStringView;
+
 		auto assign_const = [](auto &itt, auto start, auto end)
 		{
 			fixed_view const_str(start, end - start);
@@ -353,6 +369,7 @@ struct processor
 
 		arg(outputStream, param);
 	}
+
 
 	constexpr auto operator()(const auto &args, const auto &params) const
 	{
@@ -511,9 +528,9 @@ struct format_args
 	{
 		(Getters{}(stream, args, parameters), ...);
 	}
-
+//TODO add in a concept for stream
 	template <typename... ParamT>
-	constexpr auto output(auto &stream, const ParamT... Params) const requires (less_or_equal_to<sizeof...(ParamT), param_count>)
+	constexpr auto output(auto &stream, const ParamT... Params) const requires (param_count == sizeof...(ParamT))
 	// (param_count >= sizeof...(ParamT))
 	{
 		using result_sequence = apply_argument_parameters<arg_type, ParamT...>;
@@ -521,7 +538,7 @@ struct format_args
 	}
 };
 
-template <typename FixedStringViewT, parsed_string Arg, typename Head, typename... Tail>
+template <parsed_string Arg, typename Head, typename... Tail>
 static inline constexpr auto parse_variable()
 {
 	if constexpr (!Arg.is_var)
@@ -542,7 +559,7 @@ static inline constexpr auto parse_variable()
 	// }
 	else if constexpr (sizeof...(Tail) > 0)
 	{
-		return parse_variable<FixedStringViewT, Arg, Tail...>();
+		return parse_variable<Arg, Tail...>();
 	}
 	else
 	{
@@ -553,24 +570,26 @@ static inline constexpr auto parse_variable()
 	}
 }
 
-template <auto ArgViewArray, typename variables_list = basic_variables, typename Indicies = std::make_index_sequence<ArgViewArray.size()>>
-struct arg_processor;
-
-template <std::size_t N, typename FixedStringViewT, parsed_string_array<FixedStringViewT, N> ArgViewArray, typename... variables_list, typename IndexT, IndexT... Indicies>
-struct arg_processor<ArgViewArray, std::tuple<variables_list...>, std::integer_sequence<IndexT, Indicies...>>
+template<parsed_string_array FormatStrings, typename... variables_list, typename IndexT, IndexT... Indicies>
+inline constexpr auto make_args(std::tuple<variables_list...>, std::integer_sequence<IndexT, Indicies...>)
 {
-	constexpr auto operator()()
-	{
-		return format_args((parse_variable<FixedStringViewT, ArgViewArray[Indicies], variables_list...>())...);
-	};
-};
+	return format_args((parse_variable<FormatStrings[Indicies], variables_list...>())...);
+}
 
-template <Fixed_String... SubStrs>
+template<const auto& FormatStr, typename variables_types>
+inline constexpr auto make_args()
+{
+	constexpr parsed_string_array<FormatStr.size(), FormatStr> parsed_format_string;
+
+	return make_args<parsed_format_string>(variables_types{}, std::make_index_sequence<parsed_format_string.size()>{});
+}
+
+template <Fixed_String String, typename variable_types = basic_variables>
 struct format_string
 {
-	static constexpr Fixed_String str = make_fixed_string<SubStrs...>();
+	static constexpr Fixed_String str = String;
+	static constexpr auto args = make_args<str, variable_types>();
 
-	static constexpr auto args = arg_processor<parsed_string_array<fixed_string_view<&str.data>, count_vars(str)>(str)>()();
 	constexpr format_string(){}
 
 	constexpr auto operator()(auto&&... params)
@@ -579,7 +598,8 @@ struct format_string
 	}
 };
 
-
+template <Fixed_String... SubStrs>
+using format_multi_string = format_string<make_fixed_string<SubStrs...>()>;
 
 // Temporary
 template <Fixed_String Str>
