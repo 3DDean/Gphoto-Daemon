@@ -1,18 +1,19 @@
 #pragma once
 #include "Fixed_Array.h"
 #include "format.h"
-#include "formater.h"
+#include <fstream>
+
 #include "gphoto-error.h"
 #include "tuple.h"
-#include <array>
+#include <string>
+#include <type_traits>
+// #include <array>
 #include <concepts>
 #include <functional>
 #include <gphoto2/gphoto2-widget.h>
-#include <sstream>
+#include <memory>
 #include <type_traits>
 
-struct unused_t
-{};
 template <auto>
 struct function_traits;
 
@@ -23,8 +24,6 @@ struct function_traits<func>
 	using args = std::tuple<ArgsT...>;
 	using function_type = std::function<ReturnType(ArgsT...)>;
 };
-
-static constexpr unused_t unused;
 
 template <auto Func>
 auto getter(CameraWidget *cameraWidget)
@@ -42,190 +41,97 @@ void setter(CameraWidget *cameraWidget, T object)
 	gp_error_check(Func(cameraWidget, object));
 }
 
-struct camera_widget
-{
-	CameraWidget *cameraWidget;
-	camera_widget(CameraWidget *cameraWidget)
-		: cameraWidget(cameraWidget)
-	{}
-
-	auto get_label() { return getter<gp_widget_get_label>(cameraWidget); }
-
-	auto get_name() { return getter<gp_widget_get_name>(cameraWidget); }
-	auto set_name(auto val) { return setter<gp_widget_set_name>(cameraWidget, val); }
-	auto get_info() { return getter<gp_widget_get_info>(cameraWidget); }
-	auto set_info(auto val) { return setter<gp_widget_set_info>(cameraWidget, val); }
-
-	auto get_id() { return getter<gp_widget_get_id>(cameraWidget); }
-
-	auto get_readonly() { return getter<gp_widget_get_readonly>(cameraWidget); }
-	auto set_readonly(auto val) { return setter<gp_widget_set_readonly>(cameraWidget, val); }
-	auto get_changed() { return gp_widget_changed(cameraWidget); }
-	auto set_changed(auto val) { return setter<gp_widget_set_changed>(cameraWidget, val); }
-
-	auto get_type() { return getter<gp_widget_get_type>(cameraWidget); }
-
-	CameraWidget *ptr() const { return cameraWidget; }
-	// using gwidget_child_array = array_accessor<accessor<gp_widget_count_children>, accessor<gp_widget_get_child>>;
-};
-
-struct gphoto_widget{};
+struct gphoto_widget
+{};
 
 template <CameraWidgetType>
-struct widget_formatter;
+struct widget_object;
 
-template <>
-struct variable<gphoto_widget> : variable_base<gphoto_widget, "gp_widget">
+template <Fixed_String TypeStr, typename ValueType>
+struct widget_format_helper
 {
-	using base = variable_base<gphoto_widget, "gp_widget">;
-	using base::base;
-	constexpr variable(std::size_t id_hash, std::string_view fmt_str)
-		: base(id_hash)
-	{}
+	// static constexpr Fixed_String type_str = make_fixed_string<TypeStr>();
+	using value_type = ValueType;
 
-	constexpr auto operator()(auto &formatter, const camera_widget &cameraWidget) const;
-};
-
-// TODO integrate variable into format string
-struct config_formatter
-{
-	using formatter = format_string<"${str:label}, ${str:name}, ${str:tooltip}, ${int:id}, ${bool:readonly}, ${bool:changed}, ${gp_widget:type}", concat_t<basic_variables, variable<gphoto_widget>>>;
-	// Stream
-	config_formatter(auto &stream)
-		: stream(stream)
-	{}
-	~config_formatter()
+	ValueType get_value(CameraWidget *cameraWidget) const
 	{
-		stream << "\n";
-		stream.close();
-	}
-	std::ofstream &stream;
-	uint32_t indent_amount = 0;
-
-	void push_indent()
-	{
-		indent_amount++;
-	}
-	void pop_indent()
-	{
-		indent_amount--;
-	}
-	void new_line()
-	{
-		stream << "\n";
-		for (std::size_t i = 0; i < indent_amount; i++)
-			stream << " ";
-	}
-	void write_config(CameraWidget *cameraWidget)
-	{
-		camera_widget widget(cameraWidget);
-		formatter format;
-		format(*this,
-			   widget.get_label(),
-			   widget.get_name(),
-			   widget.get_info(),
-			   widget.get_id(),
-			   widget.get_readonly(),
-			   widget.get_changed(),
-			   widget);
-
-		uint32_t childCount = gp_widget_count_children(cameraWidget);
-		if (childCount > 0)
-		{
-			for (std::size_t i = 0; i < childCount; i++)
-			{
-				CameraWidget *child;
-				gp_widget_get_child(cameraWidget, i, &child);
-				push_indent();
-				new_line();
-				write_config(child);
-				pop_indent();
-			}
-		}
-	}
-	
-	auto &operator<<(auto val)
-	{
-		stream << val;
-		return *this;
-	}
-};
-
-template <CameraWidgetType Type>
-void get_value(auto &stream, CameraWidget *cameraWidget)
-{
-	using value_type = typename widget_formatter<Type>::value_type;
-	if constexpr (!std::is_same_v<value_type, void>)
-	{
-		camera_widget widget(cameraWidget);
-
-		stream << widget.get_id() << " ";
-		value_type value;
+		ValueType value;
 		gp_widget_get_value(cameraWidget, (void *)&value);
-		stream << value << "\n";
+		return value;
 	}
-}
-
-struct value_formatter
-{
-	value_formatter(auto &stream)
-		: stream(stream)
-	{}
-	~value_formatter(){
-		stream << "\n";
-		stream.close();
-	}
-	std::ofstream &stream;
-
-	void write_value(CameraWidget *cameraWidget)
+	std::string_view type_str() const
 	{
-		camera_widget widget(cameraWidget);
-		
-		switch (widget.get_type())
-		{
-		case GP_WIDGET_TEXT:
-			get_value<GP_WIDGET_TEXT>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_RANGE:
-			get_value<GP_WIDGET_RANGE>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_TOGGLE:
-			get_value<GP_WIDGET_TOGGLE>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_RADIO:
-			get_value<GP_WIDGET_RADIO>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_MENU:
-			get_value<GP_WIDGET_MENU>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_BUTTON:
-			get_value<GP_WIDGET_BUTTON>(stream, cameraWidget);
-			break;
-		case GP_WIDGET_DATE:
-			get_value<GP_WIDGET_DATE>(stream, cameraWidget);
-			break;
-		}
-		uint32_t childCount = gp_widget_count_children(cameraWidget);
-		if (childCount > 0)
-		{
-			for (std::size_t i = 0; i < childCount; i++)
-			{
-				CameraWidget *child;
-				gp_widget_get_child(cameraWidget, i, &child);
-
-				write_value(child);
-			}
-		}
+		return TypeStr;
 	}
 };
 
-// TODO Add in a hash checker
-struct ChoicesAttributes
+template <Fixed_String TypeStr>
+struct widget_format_helper<TypeStr, void>
 {
+	// static constexpr Fixed_String type_str = make_fixed_string<TypeStr>();
+	using value_type = void;
+	std::string_view type_str() const
+	{
+		return TypeStr;
+	}
+};
+
+struct indent;
+// TODO Add in a hash checker
+// It's a choosy widget
+template <Fixed_String TypeStr, typename T>
+struct widget_with_choices
+{
+	// static constexpr Fixed_String type_str = make_fixed_string<TypeStr>();
+	std::string_view type_str() const
+	{
+		return TypeStr;
+	}
+
+	using value_type = char *;
+
 	using formatter = variable<string>;
 	using const_str = const char *;
 
-	void operator()(auto &output, CameraWidget *widget)
+	const_str get_choice(CameraWidget *widget, std::size_t index) const
+	{
+		const_str choice;
+		gp_widget_get_choice(widget, index, &choice);
+		return choice;
+	}
+
+	int32_t get_value(CameraWidget *widget) const
+	{
+		const_str value;
+		gp_widget_get_value(widget, (void *)&value);
+
+		// std::size_t count = gp_widget_count_choices(widget);
+
+		// std::vector<const_str> options(count);
+		// std::size_t i = 0;
+		for (std::size_t i = 0; i < gp_widget_count_choices(widget); i++)
+		{
+			const_str option = get_choice(widget, i);
+			if (std::string_view(value) == std::string_view(option))
+				return i;
+		}
+
+		// for (auto itt = options.begin(); itt < options.end(); ++itt, ++i)
+		// 	*itt = get_choice(widget, i);
+
+		// auto itt = options.begin();
+		// for (; itt < options.end(); ++itt)
+		// 	if (*itt == value)
+		// 		break;
+
+		// if (itt < options.end())
+		// {
+		// 	return itt - options.begin();
+		// }
+		return -1;
+	}
+
+	void format_supplementary(auto &output, CameraWidget *widget)
 	{
 		formatter format;
 
@@ -245,131 +151,304 @@ struct ChoicesAttributes
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_WINDOW>
+struct widget_object<GP_WIDGET_WINDOW> : widget_format_helper<"window", void>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"window">();
-	using value_type = void;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_SECTION>
+struct widget_object<GP_WIDGET_SECTION> : widget_format_helper<"section", void>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"section">();
-	using value_type = void;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_TEXT>
+struct widget_object<GP_WIDGET_TEXT> : widget_format_helper<"text", char *>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"text">();
-	using value_type = char *;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_RANGE>
+struct widget_object<GP_WIDGET_RANGE> : widget_format_helper<"range", float>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"range">();
 	using formatter = format_string<"${int:min}, ${int:max}, ${int:increment}">;
-	static constexpr Fixed_String label = "range";
 
-	using value_type = float;
-
-	void operator()(auto &output, CameraWidget *widget)
+	void format_supplementary(auto &&stream, CameraWidget *widget)
 	{
 		float min, max, increment;
 
 		gp_error_check(gp_widget_set_range(widget, min, max, increment));
 
 		formatter format;
-		format(output, min, max, increment);
+		format(stream, min, max, increment);
 	}
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_TOGGLE>
+struct widget_object<GP_WIDGET_TOGGLE> : widget_format_helper<"toggle", int>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"toggle">();
-	using value_type = int;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_RADIO> : ChoicesAttributes
+struct widget_object<GP_WIDGET_RADIO> : widget_with_choices<"radio", char *>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"radio">();
-	using value_type = char *;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_MENU> : ChoicesAttributes
+struct widget_object<GP_WIDGET_MENU> : widget_with_choices<"menu", char *>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"menu">();
-
-	using value_type = char *;
 };
 
 template <>
-struct widget_formatter<GP_WIDGET_BUTTON>
+struct widget_object<GP_WIDGET_BUTTON> : widget_format_helper<"button", void>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"button">();
-	using value_type = void;
 };
+
 template <>
-struct widget_formatter<GP_WIDGET_DATE>
+struct widget_object<GP_WIDGET_DATE> : widget_format_helper<"date", int>
 {
-	static constexpr Fixed_String type_str = make_fixed_string<"date">();
-	using value_type = int;
 };
 
+template <CameraWidgetType... TypeEnum>
+using widget_variant_helper = std::variant<widget_object<TypeEnum>...>;
 
-template <typename WidgetFormatter, typename FormatterT>
-auto widget_common(WidgetFormatter widgetFormatter, FormatterT &formatter, CameraWidget *cameraWidget)
+using widget_variant =
+	widget_variant_helper<
+		GP_WIDGET_WINDOW,
+		GP_WIDGET_SECTION,
+		GP_WIDGET_TEXT,
+		GP_WIDGET_RANGE,
+		GP_WIDGET_TOGGLE,
+		GP_WIDGET_RADIO,
+		GP_WIDGET_MENU,
+		GP_WIDGET_BUTTON,
+		GP_WIDGET_DATE>;
+
+// For shared_ptr deleter
+struct camera_widget_deleter
 {
-	formatter << WidgetFormatter::type_str;
-
-	if constexpr (requires { widgetFormatter(formatter, cameraWidget); })
+	void operator()(CameraWidget *ptr) const noexcept
 	{
-		formatter.push_indent();
-		formatter.new_line();
-
-		widgetFormatter(formatter, cameraWidget);
-		formatter.pop_indent();
+		gp_widget_free(ptr);
 	}
+};
+
+// Workaround for gphoto internal memory management
+struct camera_widget_non_owning
+{
+	void operator()(CameraWidget *ptr) const noexcept
+	{}
+};
+
+inline CameraWidget *get_camera_root_config(Camera *camera, GPContext *context)
+{
+	CameraWidget *window;
+	gp_camera_get_config(camera, &window, context);
+	return window;
 }
 
-constexpr auto variable<gphoto_widget>::operator()(auto &formatter, const camera_widget &cameraWidgetObject) const
+struct camera_widget
 {
-	CameraWidget *cameraWidget = cameraWidgetObject.ptr();
-	CameraWidgetType widgetType;
-	gp_widget_get_type(cameraWidget, &widgetType);
+	std::shared_ptr<CameraWidget> ptr;
+	widget_variant widget_type;
 
-	switch (widgetType)
+	camera_widget() {}
+	camera_widget(const camera_widget &widget)
+		: ptr(widget.ptr), widget_type(widget.widget_type) {}
+
+	camera_widget(Camera *camera, GPContext *context)
+		: camera_widget(get_camera_root_config(camera, context), camera_widget_deleter())
+	{}
+
+	template <typename DeleterT>
+	camera_widget(CameraWidget *ptr, DeleterT deleter = camera_widget_deleter{}) requires(!std::is_pointer_v<DeleterT>)
+		: ptr(ptr, deleter)
 	{
-	case GP_WIDGET_WINDOW:
-		widget_common(widget_formatter<GP_WIDGET_WINDOW>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_SECTION:
-		widget_common(widget_formatter<GP_WIDGET_SECTION>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_TEXT:
-		widget_common(widget_formatter<GP_WIDGET_TEXT>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_RANGE:
-		widget_common(widget_formatter<GP_WIDGET_RANGE>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_TOGGLE:
-		widget_common(widget_formatter<GP_WIDGET_TOGGLE>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_RADIO:
-		widget_common(widget_formatter<GP_WIDGET_RADIO>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_MENU:
-		widget_common(widget_formatter<GP_WIDGET_MENU>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_BUTTON:
-		widget_common(widget_formatter<GP_WIDGET_BUTTON>(), formatter, cameraWidget);
-		break;
-	case GP_WIDGET_DATE:
-		widget_common(widget_formatter<GP_WIDGET_DATE>(), formatter, cameraWidget);
-		break;
+		switch (get_type())
+		{
+		case GP_WIDGET_WINDOW:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_WINDOW>);
+			break;
+		case GP_WIDGET_SECTION:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_SECTION>);
+			break;
+		case GP_WIDGET_TEXT:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_TEXT>);
+			break;
+		case GP_WIDGET_RANGE:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_RANGE>);
+			break;
+		case GP_WIDGET_TOGGLE:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_TOGGLE>);
+			break;
+		case GP_WIDGET_RADIO:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_RADIO>);
+			break;
+		case GP_WIDGET_MENU:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_MENU>);
+			break;
+		case GP_WIDGET_BUTTON:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_BUTTON>);
+			break;
+		case GP_WIDGET_DATE:
+			widget_type = widget_variant(std::in_place_index<GP_WIDGET_DATE>);
+			break;
+		}
 	}
-}
+
+	auto get_label() const { return getter<gp_widget_get_label>(ptr.get()); }
+
+	auto get_name() const { return getter<gp_widget_get_name>(ptr.get()); }
+	auto set_name(auto val) { return setter<gp_widget_set_name>(ptr.get(), val); }
+	auto get_info() const { return getter<gp_widget_get_info>(ptr.get()); }
+	auto set_info(auto val) { return setter<gp_widget_set_info>(ptr.get(), val); }
+
+	auto get_id() const { return getter<gp_widget_get_id>(ptr.get()); }
+
+	auto get_readonly() const { return getter<gp_widget_get_readonly>(ptr.get()); }
+	auto set_readonly(int val) { return setter<gp_widget_set_readonly>(ptr.get(), val); }
+	auto get_changed() const { return gp_widget_changed(ptr.get()); }
+	auto set_changed(int val) { return setter<gp_widget_set_changed>(ptr.get(), val); }
+
+	auto get_child_count() const { return gp_widget_count_children(ptr.get()); }
+	auto get_child(std::size_t index) const
+	{
+		CameraWidget *child;
+		gp_widget_get_child(ptr.get(), index, &child);
+		return child;
+	}
+
+	CameraWidgetType get_type() const { return getter<gp_widget_get_type>(ptr.get()); }
+
+	std::string_view get_type_str() const
+	{
+		return std::visit<std::string_view>(
+			[](auto &&arg)
+			{
+				using T = std::decay_t<decltype(arg)>;
+				return arg.type_str();
+			},
+			widget_type);
+	}
+
+	void use_value(auto &&func) const
+	{
+		std::visit<void>([&](auto &&arg)
+						 {
+			using T = typename std::decay_t<decltype(arg)>::value_type;
+			if constexpr (!std::is_same_v<T, void>)
+			{
+				auto value = arg.get_value(ptr.get());
+				func(value);
+			} },
+						 widget_type);
+	}
+
+	void format_supplementary(auto &&stream)
+	{
+		std::visit<void>([&](auto &&arg)
+						 {
+							 using T = typename std::decay_t<decltype(arg)>::value_type;
+							 if constexpr (requires { arg.format_supplementary(stream, ptr.get()); })
+							 {
+								indent indent_obj = indent(stream);
+								stream.new_line();
+								arg.format_supplementary(stream, ptr.get());
+							 } },
+						 widget_type);
+	}
+};
+
+struct config_writer
+{
+	using formatter = format_string<"${str:label}, ${str:name}, ${str:tooltip}, ${int:id}, ${bool:readonly}, ${bool:changed}, ${type}">;
+	// Stream
+	config_writer(auto &stream)
+		: stream(stream)
+	{}
+	~config_writer()
+	{
+		stream << "\n";
+		stream.close();
+	}
+	std::ofstream &stream;
+	formatter format;
+	uint32_t indent_amount = 0;
+
+	void new_line()
+	{
+		stream << "\n";
+		if (indent_amount > 500)
+			throw "Overflow";
+
+		for (std::size_t i = 0; i < indent_amount; i++)
+			stream << " ";
+	}
+	void write(std::string_view camera_name)
+	{
+		stream << camera_name << "\n";
+	}
+
+	void write(camera_widget widget)
+	{
+		format(*this,
+			   widget.get_label(),
+			   widget.get_name(),
+			   widget.get_info(),
+			   widget.get_id(),
+			   widget.get_readonly(),
+			   widget.get_changed(),
+			   widget.get_type_str());
+
+		widget.format_supplementary(*this);
+		new_line();
+	}
+
+	auto &operator<<(auto val)
+	{
+		stream << val;
+		return *this;
+	}
+};
+
+struct value_writer
+{
+	using formatter = format_string<"${str:id}, ${value}\n">;
+
+	value_writer(auto &stream)
+		: stream(stream) {}
+
+	std::ofstream &stream;
+	formatter format;
+
+	void write(camera_widget widget)
+	{
+		auto format_func = [&](auto &&value)
+		{
+			stream << widget.get_name() << " ";
+			stream << value << "\n";
+		};
+
+		widget.use_value(format_func);
+	}
+	auto &operator<<(auto val)
+	{
+		stream << val;
+		return *this;
+	}
+};
+
+struct indent
+{
+	uint32_t &indent_amount;
+	indent(config_writer &writer)
+		: indent_amount(writer.indent_amount)
+	{
+		++indent_amount;
+	}
+
+	indent(indent &&old) = default;
+	indent(indent &) = delete;
+	indent(const indent &) = delete;
+	indent &operator=(const indent &) = delete;
+	indent &operator=(indent &) = delete;
+
+	~indent() { --indent_amount; }
+};

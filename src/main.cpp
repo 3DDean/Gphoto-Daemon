@@ -3,10 +3,10 @@
 #include <string.h>
 
 #include "Commander.h"
-#include "formater.h"
 #include "gphoto-widget.h"
 #include "gphoto.h"
 #include "named_pipe.h"
+#include "daemon_config.h"
 #include <gphoto2/gphoto2-camera.h>
 
 #include <fstream>
@@ -28,48 +28,8 @@ void term(int signum)
 //Current approach is to create a file with ${camera_name}.values that contains both the current value and the corresponding widget id
 //it also needs a way of updating config values using the daemon interface
 // Format is ', ' delinatate and indentation indicants depth
-// TODO move this to it's own folder
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
-auto make_directory(const char *path)
-{
-	struct stat st = {0};
-	if (stat(path, &st) == -1)
-	{
-		mkdir(path, 0777);
-	}
-}
-auto make_directory(std::string_view path)
-{
-	make_directory(path.data());
-}
-auto make_directory(std::string path)
-{
-	make_directory(path.data());
-}
 
-struct file_manager
-{
-	file_manager()
-	{
-		make_directory(main_dir);
-		camera_dir = main_dir + "/" + camera_dir;
-		make_directory(camera_dir);
-	}
-
-	auto get_camera_config(std::string camera_name)
-	{
-		return std::ofstream(camera_dir + "/" + camera_name + ".widgets", std::ios_base::trunc | std::ios_base::out);
-	}
-	auto init_camera_values(std::string camera_name)
-	{
-		return std::ofstream(camera_dir + "/" + camera_name + ".values", std::ios_base::trunc | std::ios_base::out);
-	}
-	std::string main_dir = "/tmp/gphoto_daemon";
-	std::string camera_dir = "cameras";
-};
 
 int main(int argc, char **argv)
 {
@@ -80,7 +40,7 @@ int main(int argc, char **argv)
 	sigaction(SIGTERM, &action, NULL);
 	sigaction(SIGINT, &action, NULL);
 
-	file_manager files;
+	daemon_config config;
 
 	std::string pathDir = "/tmp";
 
@@ -129,17 +89,8 @@ int main(int argc, char **argv)
 			std::printf("Could Not open camera\n");
 			return -1;
 		}
-		auto stream = files.get_camera_config(activeCamera.name);
-		auto value_file = files.init_camera_values(activeCamera.name);
-		
-		config_formatter formatter(stream);
-
-		value_formatter value_formatter(value_file);
-		CameraWidget *data;
-		formatter << activeCamera.name << "\n";
-		activeCamera.getConfig(data);
-		formatter.write_config(data);
-		value_formatter.write_value(data);
+		activeCamera.create_config_file(config);
+		activeCamera.create_value_file(config);
 
 		return 0;
 	}

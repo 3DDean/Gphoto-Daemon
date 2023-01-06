@@ -115,14 +115,19 @@ struct unspecified<0>
 	template <typename FixedStringView>
 	constexpr unspecified(parsed_string<FixedStringView> str){};
 
-	constexpr auto operator()(auto &stream, auto string) const
+	constexpr auto operator()(auto &stream, auto value) const
 	{
-		stream << static_cast<std::string>(string);
+		stream << value;
 	}
 	constexpr auto operator()(auto &stream, std::string_view string) const
 	{
 		stream << string;
 	}
+	constexpr auto operator()(auto &stream, float value) const
+	{
+		stream << value;
+	}
+
 };
 
 template <typename Output, Fixed_String Type_Str = "">

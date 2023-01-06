@@ -182,7 +182,13 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 
 	inline static constexpr void copy(const char *_dst) {}
 
-	constexpr const std::string_view to_string_view() const noexcept { return std::string_view(Array::data, N); }
+	constexpr const std::string_view to_string_view() const noexcept
+	{
+		if (Array::data[N - 1] == '\0')
+			return std::string_view(Array::data, N - 1);
+		else
+			return std::string_view(Array::data, N);
+	}
 
 	constexpr const char *to_char_ptr() const noexcept { return Array::data; }
 
@@ -221,7 +227,7 @@ struct Fixed_String : Fixed_Array_Base<char, N>
 #endif
 };
 
-template <auto *BasePtr>
+template <auto &BaseStr>
 struct fixed_string_view
 {
 	std::size_t m_offset;
@@ -237,7 +243,7 @@ struct fixed_string_view
 		: m_offset(0), m_size(size) {}
 
 	constexpr fixed_string_view(const char *ptr, std::size_t size)
-		: m_offset(ptr - *BasePtr), m_size(size) {}
+		: m_offset(ptr - BaseStr.data), m_size(size) {}
 
 	constexpr fixed_string_view(const std::string_view _view)
 		: fixed_string_view(_view.data(), _view.size()) {}
@@ -250,7 +256,7 @@ struct fixed_string_view
 	// constexpr const char *end() const noexcept { return *BasePtr + m_offset + size; }
 	// constexpr const char *begin() const noexcept { return *BasePtr + m_offset; }
 
-	static constexpr const char *data() { return *BasePtr; }
+	static constexpr const char *data() { return BaseStr.data; }
 	constexpr std::size_t size() const { return m_size; }
 
 	constexpr const fixed_string_view operator=(const fixed_string_view obj)
@@ -260,7 +266,9 @@ struct fixed_string_view
 		return *this;
 	}
 
-	constexpr std::string_view to_string_view() const noexcept { return std::string_view(*BasePtr + m_offset, m_size); }
+	constexpr std::string_view to_string_view() const noexcept { return std::string_view(BaseStr.data + m_offset, m_size); }
+	static constexpr std::string_view full_str() noexcept { return BaseStr; }
+
 	constexpr operator std::string_view() const noexcept { return to_string_view(); }
 
 	constexpr bool empty() const noexcept { return m_size == 0; }
@@ -320,7 +328,7 @@ template <typename... ArgsT>
 requires((array_size_v<ArgsT> > 0), ...) Fixed_String(const ArgsT &...)
 ->Fixed_String<(array_size_v<ArgsT> + ...) - sizeof...(ArgsT) + 1>;
 
-template <auto... Strings>
+template <Fixed_String... Strings>
 static inline constexpr auto make_fixed_string()
 {
 	using fixed_string = Fixed_String<(string_size(Strings) + ...)>;
@@ -338,6 +346,15 @@ static inline constexpr auto make_fixed_string()
 	}
 	return output;
 };
+
+	// template<auto& String>
+	// using fixed_string_view_t = fixed_string_view<String.data, String.size()>;
+
+	// template <auto& String>
+	// static inline constexpr auto make_fixed_view()
+	// {
+
+	// }
 
 #ifdef CTRE_V2__CTRE__HPP
 namespace ctll

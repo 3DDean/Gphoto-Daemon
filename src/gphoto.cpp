@@ -94,13 +94,15 @@ GPhoto::GPhoto()
 	gp_context_set_status_func(context, ctx_status_func, NULL);
 	gp_error_check(detectCameras());
 
-	int cameraCount = gp_list_count(list);
-	detectedCameras.resize(cameraCount);
+	// int cameraCount = gp_list_count(list);
+	// detectedCameras.resize(cameraCount);
 
-	for (std::size_t i = 0; i < cameraCount; i++)
-	{
-		gp_error_check(gp_list_get_name(list, i, &detectedCameras[i]));
-	}
+	// for (std::size_t i = 0; i < cameraCount; i++)
+	// {
+	// 	detectedCameras[i] = CameraListEntry(list, i);
+	// 	// gp_list_get_value(list, i, )
+	// 	// gp_error_check(gp_list_get_name(list, i, &detectedCameras[i]));
+	// }
 }
 
 GPhoto::~GPhoto()
@@ -108,8 +110,10 @@ GPhoto::~GPhoto()
 	gp_context_unref(context);
 	gp_port_info_list_free(gpinfolist);
 	gp_abilities_list_free(abilities);
+	gp_list_free(list);
 }
 
+//This detects cameras
 int GPhoto::detectCameras()
 {
 	int ret;
@@ -141,9 +145,12 @@ int GPhoto::openCamera(int index, CameraObj &camera)
 	CameraAbilities a;
 	GPPortInfo pi;
 
-	if (index < detectedCameras.size())
+	if (index < cameraCount())
 	{
-		const char *nameStr = detectedCameras[index];
+		CameraListEntry cameraEntry(list, index);
+		const char *nameStr = cameraEntry.name;
+
+		// const char *nameStr = detectedCameras[index].name;
 		Camera *ptr = NULL;
 		fprintf(stderr, "name is %s\n", nameStr);
 
@@ -205,10 +212,11 @@ int GPhoto::openCamera(int index, CameraObj &camera)
 		if (ret < GP_OK)
 		{
 			fprintf(stderr, "camera %s at %s not found.\n", nameStr, port);
-			gp_list_free(list);
+			// gp_list_free(list);
 			return ret;
 		}
-		gp_list_free(list);
+		//Double check this
+		// gp_list_free(list);
 
 		ret = gp_camera_init(ptr, context);
 		if (ret < GP_OK)
@@ -218,12 +226,14 @@ int GPhoto::openCamera(int index, CameraObj &camera)
 		}
 		camera.context = context;
 		camera.ptr = ptr;
+		camera.name = nameStr;
+		// camera = CameraObj(context, ptr, context);
+		// camera.name += cameraEntry.value;
 		//= CameraObj(context, ptr);
 	}
 	else
 	{
-		fprintf(stderr, "No camera's detected.\n");
-		
+		throw std::logic_error("No camera's detected.");	
 	}
 	return ret;
 }
