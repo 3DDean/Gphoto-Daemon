@@ -119,6 +119,7 @@ struct CameraObj
 		};
 
 		process_widget(root_widget, writer_func, push_func, pop_func);
+		widget_writer << "\n";
 
 		return true;
 	}
@@ -136,6 +137,7 @@ struct CameraObj
 		auto pop_func = []() {};
 
 		process_widget(root_widget, writer_func, push_func, pop_func);
+
 		return true;
 	}
 
@@ -167,8 +169,9 @@ struct CameraObj
 			widget_stack.emplace(widget, 0, widget.get_child_count());
 			push_func();
 		};
-		push_to_stack(root_widget);
+		element_func(root_widget);
 
+		push_to_stack(root_widget);
 		while (!widget_stack.empty())
 		{
 			bool changed_top = false;

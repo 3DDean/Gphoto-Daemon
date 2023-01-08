@@ -77,7 +77,6 @@ struct widget_format_helper<TypeStr, void>
 };
 
 struct indent;
-// TODO Add in a hash checker
 // It's a choosy widget
 template <Fixed_String TypeStr, typename T>
 struct widget_with_choices
@@ -105,10 +104,6 @@ struct widget_with_choices
 		const_str value;
 		gp_widget_get_value(widget, (void *)&value);
 
-		// std::size_t count = gp_widget_count_choices(widget);
-
-		// std::vector<const_str> options(count);
-		// std::size_t i = 0;
 		for (std::size_t i = 0; i < gp_widget_count_choices(widget); i++)
 		{
 			const_str option = get_choice(widget, i);
@@ -116,18 +111,6 @@ struct widget_with_choices
 				return i;
 		}
 
-		// for (auto itt = options.begin(); itt < options.end(); ++itt, ++i)
-		// 	*itt = get_choice(widget, i);
-
-		// auto itt = options.begin();
-		// for (; itt < options.end(); ++itt)
-		// 	if (*itt == value)
-		// 		break;
-
-		// if (itt < options.end())
-		// {
-		// 	return itt - options.begin();
-		// }
 		return -1;
 	}
 
@@ -378,16 +361,17 @@ struct config_writer
 		if (indent_amount > 500)
 			throw "Overflow";
 
-		for (std::size_t i = 0; i < indent_amount; i++)
+		for (std::size_t i = 0; i < indent_amount; ++i)
 			stream << " ";
 	}
 	void write(std::string_view camera_name)
 	{
-		stream << camera_name << "\n";
+		stream << camera_name;
 	}
 
 	void write(camera_widget widget)
 	{
+		new_line();
 		format(*this,
 			   widget.get_label(),
 			   widget.get_name(),
@@ -398,7 +382,6 @@ struct config_writer
 			   widget.get_type_str());
 
 		widget.format_supplementary(*this);
-		new_line();
 	}
 
 	auto &operator<<(auto val)
