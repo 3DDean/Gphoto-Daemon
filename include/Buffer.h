@@ -23,6 +23,7 @@ struct BufferReader_Base
 	bool read(T &_value)
 	{
 		char *readEnd = dataPos + sizeof(T);
+		//The reason this is less than or equal to is because we are checking pointer positions
 		if (readEnd <= dataEnd)
 		{
 			read_internal(&_value);
@@ -33,10 +34,10 @@ struct BufferReader_Base
 
   protected:
 	template <typename... ArgsT, std::size_t... I>
-	bool read_tuple(std::tuple<ArgsT...> &_parameters, std::index_sequence<I...>)
+	inline bool read_tuple(std::tuple<ArgsT...> &_parameters, std::index_sequence<I...>)
 	{
 		char *readEnd = dataPos + (sizeof(ArgsT) + ...);
-		if (readEnd < dataEnd)
+		if (readEnd <= dataEnd)
 		{
 			(read_internal(std::get<I>(_parameters)), ...);
 			return true;
@@ -45,7 +46,7 @@ struct BufferReader_Base
 	}
 
 	template <typename T>
-	void read_internal(T *_value)
+	inline void read_internal(T *_value)
 	{
 		_value = (T *)(dataPos);
 		dataPos += sizeof(T);

@@ -40,6 +40,18 @@ struct daemon_config
 	{
 		return std::ofstream(camera_dir + "/" + camera_name + ".values", std::ios_base::trunc | std::ios_base::out);
 	}
+	auto get_status_file_path(){
+		return main_dir + "/" + statusFile;
+	}
+	auto get_pipe_file_path(){
+		return main_dir + "/" + pipeFile;
+	}
+
+	auto get_instruction_pipe_path(){}
 	std::string main_dir = "/tmp/gphoto_daemon";
 	std::string camera_dir = "cameras";
+
+	std::string pipeFile = "gphoto2.pipe";
+	std::string statusFile = "status_gphoto2.txt";
+	std::string widgetFile = "gphoto2_widget.txt";
 };

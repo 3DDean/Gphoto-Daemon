@@ -13,6 +13,7 @@
 #include <gphoto2/gphoto2-widget.h>
 #include <memory>
 #include <type_traits>
+#include <iostream>
 
 template <auto>
 struct function_traits;
@@ -44,11 +45,48 @@ void setter(CameraWidget *cameraWidget, T object)
 struct gphoto_widget
 {};
 
+template<typename T>
+struct widget_value_setter;
+
+template<>
+struct widget_value_setter<void>{};
+
+
+template<>
+struct widget_value_setter<float>{
+	auto set_value(CameraWidget *cameraWidget, std::string& value)
+	{
+		float data = std::stof(value);
+		std::cout << data << "\n";
+
+		// gp_widget_set_value(cameraWidget, (void *)&data);
+	}
+};
+
+template<>
+struct widget_value_setter<int>{
+		auto set_value(CameraWidget *cameraWidget, std::string& value)
+	{
+		int data = std::stoi(value);
+		std::cout << data << "\n";
+	}
+};
+
+template<>
+struct widget_value_setter<char*>
+{
+	auto set_value(CameraWidget *cameraWidget, std::string& value)
+	{
+		std::string str(value);
+		std::cout << str << "\n";
+	}
+};
+
 template <CameraWidgetType>
 struct widget_object;
 
 template <Fixed_String TypeStr, typename ValueType>
-struct widget_format_helper
+struct widget_format_helper : widget_value_setter<ValueType>
 {
 	// static constexpr Fixed_String type_str = make_fixed_string<TypeStr>();
 	using value_type = ValueType;
@@ -112,6 +150,16 @@ struct widget_with_choices
 		}
 
 		return -1;
+	}
+	int32_t set_value(CameraWidget *widget,  std::string& str) const
+	{
+		int value = std::stoi(str);
+		if (value >= 0 && value > gp_widget_count_choices(widget))
+		{
+			const_str str_value = get_choice(widget, value);
+
+			gp_widget_set_value(widget, (void *)&str_value);
+		}
 	}
 
 	void format_supplementary(auto &output, CameraWidget *widget)
@@ -227,6 +275,19 @@ inline CameraWidget *get_camera_root_config(Camera *camera, GPContext *context)
 	return window;
 }
 
+inline auto get_single_config(Camera *camera, GPContext *context, std::string_view name)
+{
+	CameraWidget *window;
+	gp_camera_get_single_config(camera, name.data(), &window, context);
+	return window;
+}
+// inline auto set_single_config(Camera *camera, GPContext *context, std::string_view name)
+// {
+// 	CameraWidget *window;
+// 	gp_camera_get_single_config(ptr, name.data(), &window, context);
+// 	return window;
+// }
+
 struct camera_widget
 {
 	std::shared_ptr<CameraWidget> ptr;
@@ -238,6 +299,10 @@ struct camera_widget
 
 	camera_widget(Camera *camera, GPContext *context)
 		: camera_widget(get_camera_root_config(camera, context), camera_widget_deleter())
+	{}
+
+	camera_widget(Camera *camera, GPContext *context, std::string_view name)
+		: camera_widget(get_single_config(camera, context, name), camera_widget_deleter())
 	{}
 
 	template <typename DeleterT>
@@ -335,6 +400,18 @@ struct camera_widget
 								stream.new_line();
 								arg.format_supplementary(stream, ptr.get());
 							 } },
+						 widget_type);
+	}
+
+	void set_value(std::string &value)
+	{
+		std::visit<void>([&](auto &&arg)
+						 {
+			using T = typename std::decay_t<decltype(arg)>::value_type;
+			if constexpr (!std::is_same_v<T, void>)
+			{
+				arg.set_value(ptr.get(), value);
+			} },
 						 widget_type);
 	}
 };

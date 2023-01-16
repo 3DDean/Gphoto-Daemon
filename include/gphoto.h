@@ -123,6 +123,7 @@ struct CameraObj
 
 		return true;
 	}
+
 	bool create_value_file(const daemon_config &config)
 	{
 		camera_widget root_widget(ptr, context);
@@ -141,7 +142,11 @@ struct CameraObj
 		return true;
 	}
 
-	std::vector<camera_widget> widgets;
+	void set_config_value(std::string& name, std::string& value)
+	{
+		camera_widget widget(ptr, context, name);
+		widget.set_value(value);
+	}
 
 	int exitCamera();
 
