@@ -54,6 +54,20 @@ static inline constexpr bool tupleFunctorSwitch(std::tuple<Ts...> &_tuple, ArgsT
 	}
 	return false;
 }
+//I don't know why this is uncommented
+// template <std::size_t I = 0, typename... Ts, typename... ArgsT>
+// static inline constexpr bool tupleFunctorSwitch(auto &_func, std::tuple<Ts...> &_tuple, ArgsT &..._args)
+// {
+// 	if constexpr (I < sizeof...(Ts))
+// 	{
+// 		if (callSwitchFunctor<I>(_func, std::get<I>(_tuple), _args...))
+// 		{
+// 			return true;
+// 		}
+// 		return tupleFunctorSwitch<I + 1>(_func, _tuple, _args...);
+// 	}
+// 	return false;
+// }
 
 template <std::size_t I = 0, typename... Ts, typename... ArgsT>
 static inline constexpr bool tupleForEach(std::tuple<Ts...> &_tuple, ArgsT &..._args)
@@ -93,14 +107,3 @@ struct tuple_cat<std::tuple<Ts1...>, std::tuple<Ts2...>>
 {
 	using type = std::tuple<Ts1..., Ts2...>;
 };
-// template<typename T, T... ints, typename... ArgsT>
-// auto mk_tuple(std::integer_sequence<T, ints...> int_seq, ArgsT... _instructions)
-// {
-// 	std::tuple<ArgsT...>()
-// }
-
-// template<typename... ArgsT>
-// auto mk_tuple(ArgsT&... elements)
-// {
-// 	return mk_tuple(std::make_index_sequence<sizeof...(elements)>(), elements...);
-// }

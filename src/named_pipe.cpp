@@ -4,7 +4,6 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "Logger.h"
 
 named_pipe::named_pipe(const char *filepath, const int open_mode)
 {

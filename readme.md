@@ -10,7 +10,7 @@ Currently it loads the camera config and then dumps it to a file.
 
 
 Dependencies
-libgphoto2, CTRE
+libgphoto2, CTRE, C++20
 git submodule can get you CTRE and use the gphoto2 package on ubuntu
 
 Compile warning 

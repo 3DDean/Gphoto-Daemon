@@ -13,10 +13,10 @@ struct Instruction<Status, F(Args...)>
 	Instruction(std::function<F(Args...)> func)
 		: func(func) {}
 
-	std::function<F(Args...)> func;
+	const std::function<F(Args...)> func;
 
 	template <std::size_t CMD_ID>
-	bool operator()(const uint16_t code, StatusMessenger &status, auto &buffer)
+	bool operator()(const uint16_t code, StatusMessenger &status, auto &buffer) 
 	{
 		if (CMD_ID == code)
 		{
@@ -24,7 +24,7 @@ struct Instruction<Status, F(Args...)>
 			{
 				std::tuple<Args...> args;
 				buffer.read(args);
-				call_func(args, std::make_index_sequence<sizeof...(Args)>());
+				call_func(args, std::make_index_sequence<sizeof...(Args)>{});
 			}
 			else
 			{
