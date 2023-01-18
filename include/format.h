@@ -1,7 +1,6 @@
 #pragma once
-#include "Fixed_Array.h"
+#include "fixed_array.h"
 #include "hash.h"
-#include "static_string.h"
 #include "tuple.h"
 #include "utility.h"
 #include <cassert>

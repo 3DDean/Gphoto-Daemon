@@ -4,7 +4,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
-#include "Buffer.h"
+#include "buffer.h"
 	
 template <std::size_t Size>
 struct pipe_buffer

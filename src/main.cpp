@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Commander.h"
+#include "commander.h"
 #include "daemon_config.h"
 #include "gphoto-widget.h"
 #include "gphoto.h"
