@@ -142,10 +142,18 @@ struct CameraObj
 		return true;
 	}
 
-	void set_config_value(std::string& name, std::string& value)
+	void set_config_value(std::string_view name, std::string_view value)
 	{
 		camera_widget widget(ptr, context, name);
-		widget.set_value(value);
+		//TODO Rewrite this to send output message to log
+		if(widget.set_value(value) == GP_OK){
+			auto result = gp_camera_set_single_config(ptr, name.data(), widget, context);
+
+			//TODO PUSH OUT TO LOG FILE 
+		}
+		else{
+			std::cout << "Error " << name << " " << value << "\n";
+		}
 	}
 
 	int exitCamera();

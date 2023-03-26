@@ -3,7 +3,6 @@
 #include "hash.h"
 #include "tuple.h"
 #include "utility.h"
-#include <cassert>
 #include <ctre.hpp>
 #include <variant>
 #include <vector>

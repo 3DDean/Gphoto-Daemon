@@ -16,6 +16,8 @@
 
 #include "format.h"
 #include <sstream>
+
+#include "gphoto_commands.h"
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
 bool running = true;
@@ -32,6 +34,12 @@ int main(int argc, char **argv)
 	action.sa_handler = term;
 	sigaction(SIGTERM, &action, NULL);
 	sigaction(SIGINT, &action, NULL);
+
+	sigset_t continueMask;
+	sigemptyset(&continueMask);
+	sigaddset(&continueMask, SIGCONT);
+	sigaddset(&continueMask, SIGUSR1);
+	sigaddset(&continueMask, SIGUSR2);
 
 	daemon_config config;
 
@@ -55,15 +63,6 @@ int main(int argc, char **argv)
 		activeCamera.getSummary(data);
 		std::printf("%s", data.text);
 	};
-
-	// auto getConfiglmb = [&activeCamera]()
-	// {
-	// 	CameraWidget *data;
-	// 	activeCamera.getConfig(data);
-	// 	int childCount = gp_widget_count_children(data);
-	// 	// std::printf("WidgetChildCount %i", childCount);
-	// 	// currently doesn't output unsure why
-	// };
 
 	auto getStorageInfolmb = [&activeCamera]()
 	{
@@ -89,29 +88,42 @@ int main(int argc, char **argv)
 		std::printf("No cameras detected\n");
 		return -1;
 	}
+	using stack_allocated_buffer = stack_buffer<512>;
 
 	StatusMessenger statusMsgr(config.get_status_file_path());
-	read_pipe instruction_pipe(config.get_pipe_file_path(), O_NONBLOCK);
+
+	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_NONBLOCK);
 
 	auto instructions = std::make_tuple(
 		Instruction<"capturing\n", void()>(capturelmb),
 		Instruction<"gettingSummery\n", void()>(getSummarylmb),
 		Instruction<"gettingStorage\n", void()>(getStorageInfolmb));
 
+//TODO Set up response que
+//TODO Update values file when camera config options are updated
+//TODO Fix radio buttons
 	statusMsgr.set();
 	int temp = 0;
 	pipe_buffer<512> piperBuffer;
 	while (running)
 	{
-		auto buffer = instruction_pipe.read(piperBuffer);
-
-		uint16_t opCode;
-		while (buffer.read(opCode))
+		// sigsuspend(&continueMask);
+		if (instruction_pipe.read())
 		{
-			std::printf("%i opcode %i \n", temp, opCode);
+			for (auto match : ctre::split<"\n">(instruction_pipe.get_string_view()))
+			{
+				std::string_view matchingStr = match;
+				if (auto [match2, config, value] = ctre::match<"(\\w+)\\s+(.+)">(matchingStr); match2)
+				{
+					std::string configStr((std::string_view)config);
+					std::string valueStr((std::string_view)value);
+					activeCamera.set_config_value(configStr, valueStr);
+				}
+				// TODO Command parsing
 
-			tupleFunctorSwitch(instructions, opCode, statusMsgr, buffer);
-			temp++;
+				std::cout << matchingStr << "\n";
+			}
+			instruction_pipe.buffer.clear();
 		}
 		usleep(10000);
 	}

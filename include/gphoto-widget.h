@@ -11,9 +11,9 @@
 #include <concepts>
 #include <functional>
 #include <gphoto2/gphoto2-widget.h>
+#include <iostream>
 #include <memory>
 #include <type_traits>
-#include <iostream>
 
 template <auto>
 struct function_traits;
@@ -45,40 +45,49 @@ void setter(CameraWidget *cameraWidget, T object)
 struct gphoto_widget
 {};
 
-template<typename T>
+template <typename T>
 struct widget_value_setter;
 
-template<>
-struct widget_value_setter<void>{};
+template <>
+struct widget_value_setter<void>
+{};
 
-
-template<>
-struct widget_value_setter<float>{
-	auto set_value(CameraWidget *cameraWidget, std::string& value)
-	{
-		float data = std::stof(value);
-		std::cout << data << "\n";
-
-		// gp_widget_set_value(cameraWidget, (void *)&data);
-	}
-};
-
-template<>
-struct widget_value_setter<int>{
-		auto set_value(CameraWidget *cameraWidget, std::string& value)
-	{
-		int data = std::stoi(value);
-		std::cout << data << "\n";
-	}
-};
-
-template<>
-struct widget_value_setter<char*>
+template <>
+struct widget_value_setter<float>
 {
-	auto set_value(CameraWidget *cameraWidget, std::string& value)
+	auto set_value(CameraWidget *cameraWidget, std::string_view value)
+	{
+		std::string str(value);
+		float data = std::stof(str);
+		std::cout << data << "\n";
+
+		return gp_widget_set_value(cameraWidget, (void *)&data);
+	}
+};
+
+template <>
+struct widget_value_setter<int>
+{
+	auto set_value(CameraWidget *cameraWidget, std::string_view value)
+	{
+		std::string str(value);
+
+		int data = std::stoi(str);
+		return gp_widget_set_value(cameraWidget, (void *)&data);
+
+		std::cout << data << "\n";
+	}
+};
+
+template <>
+struct widget_value_setter<char *>
+{
+	auto set_value(CameraWidget *cameraWidget, std::string_view value)
 	{
 		std::string str(value);
 		std::cout << str << "\n";
+
+		return gp_widget_set_value(cameraWidget, (void *)str.c_str());
 	}
 };
 
@@ -151,15 +160,17 @@ struct widget_with_choices
 
 		return -1;
 	}
-	int32_t set_value(CameraWidget *widget,  std::string& str) const
+	int32_t set_value(CameraWidget *widget, std::string_view str_view) const
 	{
+		std::string str(str_view);
 		int value = std::stoi(str);
 		if (value >= 0 && value > gp_widget_count_choices(widget))
 		{
 			const_str str_value = get_choice(widget, value);
 
-			gp_widget_set_value(widget, (void *)&str_value);
+			return gp_widget_set_value(widget, (void *)&str_value);
 		}
+		return -1;
 	}
 
 	void format_supplementary(auto &output, CameraWidget *widget)
@@ -213,8 +224,31 @@ struct widget_object<GP_WIDGET_RANGE> : widget_format_helper<"range", float>
 };
 
 template <>
-struct widget_object<GP_WIDGET_TOGGLE> : widget_format_helper<"toggle", int>
+struct widget_object<GP_WIDGET_TOGGLE> :
+	widget_format_helper<"toggle", int>
 {
+	using value_type = int;
+
+	auto set_value(CameraWidget *cameraWidget, std::string_view value)
+	{
+		int data = (value == "on") ? 0 : 1;
+		gp_error_check(gp_widget_set_value(cameraWidget, (void *)&data));
+
+		return GP_OK;
+
+		std::cout << data << "\n";
+	}
+
+	int get_value(CameraWidget *cameraWidget) const
+	{
+		int value;
+		gp_widget_get_value(cameraWidget, (void *)&value);
+		return value;
+	}
+	std::string_view type_str() const
+	{
+		return "toggle";
+	}
 };
 
 template <>
@@ -302,11 +336,12 @@ struct camera_widget
 	{}
 
 	camera_widget(Camera *camera, GPContext *context, std::string_view name)
-		: camera_widget(get_single_config(camera, context, name), camera_widget_deleter())
+		: camera_widget(get_single_config(camera, context, name), camera_widget_non_owning())
 	{}
 
 	template <typename DeleterT>
-	camera_widget(CameraWidget *ptr, DeleterT deleter = camera_widget_deleter{}) requires(!std::is_pointer_v<DeleterT>)
+	camera_widget(CameraWidget *ptr, DeleterT deleter = camera_widget_deleter{})
+		requires(!std::is_pointer_v<DeleterT>)
 		: ptr(ptr, deleter)
 	{
 		switch (get_type())
@@ -403,16 +438,22 @@ struct camera_widget
 						 widget_type);
 	}
 
-	void set_value(std::string &value)
+	int set_value(std::string_view value)
 	{
-		std::visit<void>([&](auto &&arg)
-						 {
+		return std::visit<int>([&](auto &&arg)
+							   {
 			using T = typename std::decay_t<decltype(arg)>::value_type;
 			if constexpr (!std::is_same_v<T, void>)
 			{
-				arg.set_value(ptr.get(), value);
-			} },
-						 widget_type);
+				return arg.set_value(ptr.get(), value);
+			}
+			return GP_OK; },
+							   widget_type);
+	}
+
+	operator CameraWidget *()
+	{
+		return ptr.get();
 	}
 };
 
