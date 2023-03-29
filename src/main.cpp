@@ -85,25 +85,6 @@ int main(int argc, char **argv)
 	GPhoto gphoto;
 
 	CameraObj activeCamera;
-	CameraStorage storage;
-
-	auto capturelmb = [&activeCamera]()
-	{ activeCamera.capture(); };
-
-	auto getSummarylmb = [&activeCamera]()
-	{
-		CameraText data;
-		activeCamera.getSummary(data);
-		std::printf("%s", data.text);
-	};
-
-	auto getStorageInfolmb = [&activeCamera]()
-	{
-		CameraStorage data;
-		activeCamera.getStorageInfo(data);
-		// std::printf("add %i", data.array_count());
-		// std::cout << data.count << "\n\n";
-	};
 
 	if (gphoto.cameraCount() > 0)
 	{
