@@ -3,7 +3,9 @@
 #include "daemon_config.h"
 #include "format.h"
 #include "gphoto-widget.h"
+#include <chrono>
 #include <gphoto2/gphoto2-camera.h>
+#include <iomanip>
 #include <sstream>
 #include <stack>
 #include <stdio.h>
@@ -29,6 +31,97 @@ struct CameraListEntry
 	}
 };
 
+struct GPhotoListWrapper
+{
+	GPhotoListWrapper()
+		: fileList(nullptr)
+	{
+		gp_list_new(&fileList);
+	}
+	~GPhotoListWrapper()
+	{
+		if (fileList != nullptr)
+		{
+			gp_list_free(fileList);
+		}
+	}
+	using name_value_pair = std::pair<std::string_view, std::string_view>;
+
+	struct iterator
+	{
+		iterator(int index, GPhotoListWrapper &obj)
+			: index(index),
+			  obj(obj)
+		{}
+
+		iterator &operator++()
+		{
+			index += 1;
+			return *this;
+		}
+		inline name_value_pair operator*()
+		{
+			return obj.get_pair(index);
+		}
+
+		bool operator!=(const iterator &other) const
+		{
+			return index != other.index;
+		}
+
+	  private:
+		int index;
+		GPhotoListWrapper &obj;
+	};
+
+	name_value_pair get_pair(int index)
+	{
+		const char *name = nullptr;
+		const char *value = nullptr;
+
+		gp_list_get_name(fileList, index, &name);
+		gp_list_get_value(fileList, index, &value);
+
+		return name_value_pair((name != nullptr) ? name : "", (value != nullptr) ? value : "");
+	}
+
+	std::string_view get_name(int index)
+	{
+		const char *name = nullptr;
+		gp_list_get_name(fileList, index, &name);
+		return (name != nullptr) ? name : "";
+	}
+
+	std::string_view get_value(int index)
+	{
+		const char *value = nullptr;
+
+		gp_list_get_value(fileList, index, &value);
+		return (value != nullptr) ? value : "";
+	}
+
+	int count()
+	{
+		return gp_list_count(fileList);
+	}
+
+	iterator begin()
+	{
+		return iterator(0, *this);
+	}
+	iterator end()
+	{
+		return iterator(count(), *this);
+	}
+
+	operator CameraList *()
+	{
+		return fileList;
+	}
+
+	CameraList *fileList;
+};
+
 struct GPhoto
 {
 	const char *port = "usb:";
@@ -43,18 +136,35 @@ struct GPhoto
 	GPhoto();
 	~GPhoto();
 
-	int openCamera(int index, CameraObj &camera);
+	void openCamera(int index, CameraObj &camera);
 
 	int detectCameras();
+
 	int cameraCount()
 	{
 		return gp_list_count(list);
 	}
 };
 
+struct CameraObj;
+
 struct CameraStorage
 {
 	CameraStorage() {}
+
+	std::string_view basedir();
+	std::string_view label();
+	std::string_view description();
+	CameraStorageType type();
+	CameraStorageFilesystemType fstype();
+	CameraStorageAccessType access();
+	uint64_t capacitykbytes();
+	uint64_t freekbytes();
+	uint64_t freeimages();
+	int array_count();
+
+  private:
+	friend CameraObj;
 	CameraStorageInformation *info;
 	int count;
 };
@@ -63,21 +173,23 @@ struct CameraPath
 {
 	CameraPath();
 	CameraPath(const char *folder, const char *name);
+
+	void set_folder(const char *folder);
+	void set_name(const char *name);
 	CameraFilePath file;
 };
 
 struct CameraObj
 {
-	CameraObj(GPContext *context, Camera *ptr, std::string_view name)
-		: context(context), ptr(ptr), name(name)
-	{
-	}
 
 	CameraObj(CameraObj &cam)
 		: context(cam.context), ptr(cam.ptr)
 	{}
 
 	CameraObj()
+		: cameraPath("/"),
+		  context(nullptr),
+		  ptr(nullptr)
 	{}
 
 	~CameraObj()
@@ -89,10 +201,24 @@ struct CameraObj
 		}
 	}
 
+	void init(GPContext *contextPtr, Camera *cameraPtr, std::string_view nameStr)
+	{
+		context = contextPtr;
+		ptr = cameraPtr;
+		name = nameStr;
+
+		gp_error_check(
+			gp_camera_get_storageinfo(ptr, &storageInformation.info, &storageInformation.count, context),
+			"Could not get storage info.");
+	}
+	
 	std::string name;
+	std::string cameraPath;
 	GPContext *context = nullptr;
 	Camera *ptr = nullptr;
 	CameraPath path;
+	CameraStorage storageInformation;
+	daemon_config *config;
 
 	bool create_config_file(const daemon_config &config)
 	{
@@ -145,13 +271,15 @@ struct CameraObj
 	void set_config_value(std::string_view name, std::string_view value)
 	{
 		camera_widget widget(ptr, context, name);
-		//TODO Rewrite this to send output message to log
-		if(widget.set_value(value) == GP_OK){
+		// TODO Rewrite this to send output message to log
+		if (widget.set_value(value) == GP_OK)
+		{
 			auto result = gp_camera_set_single_config(ptr, name.data(), widget, context);
 
-			//TODO PUSH OUT TO LOG FILE 
+			// TODO PUSH OUT TO LOG FILE
 		}
-		else{
+		else
+		{
 			std::cout << "Error " << name << " " << value << "\n";
 		}
 	}

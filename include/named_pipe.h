@@ -82,7 +82,79 @@ struct read_pipe : public named_pipe
 	read_pipe(const std::filesystem::path filePath, const int open_flags = 0)
 		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
 
-	bool read()
+	struct buffer_data
+	{
+		buffer_data(BufferT &buf)
+			: buffer(buf), usedAmount(0) {}
+
+		~buffer_data(){
+			buffer.consume(usedAmount);
+		}
+		operator std::string_view()
+		{
+			return (std::string_view)buffer;
+		}
+		void consume(const char* readEnd)
+		{
+			usedAmount = readEnd - buffer.data;
+		}
+
+	  private:
+	  	int usedAmount;
+		BufferT &buffer;
+	};
+
+	struct end_iterator
+	{};
+	struct iterator
+	{
+		iterator(read_pipe &pipe)
+			: pipe(pipe), read_total(0), hasMore(true)
+		{
+			this->operator++();
+		}
+
+		iterator &operator++()
+		{
+			auto amountRead = pipe.read();
+			hasMore = (amountRead > 0);
+
+			read_total += amountRead;
+			return *this;
+		}
+
+		inline buffer_data operator*() { return buffer_data(pipe.buffer); }
+
+		bool operator!=(const iterator &other) const
+		{
+			return read_total != other.read_total;
+		}
+
+		bool operator!=(const end_iterator &other) const
+		{
+			return hasMore;
+		}
+		// friend bool operator!=(const end_iterator &other, const iterator &other,) const
+		// {
+		// 	return !reachedEOF;
+		// }
+	  private:
+		bool hasMore;
+		int read_total;
+		read_pipe<BufferT> &pipe;
+	};
+
+	iterator begin()
+	{
+		return iterator(*this);
+	}
+
+	end_iterator end()
+	{
+		return end_iterator{};
+	}
+
+	int read()
 	{
 		int fd = named_pipe::pipe_fd;
 		auto pipe_reader = [fd](void *ptr, std::size_t size)
@@ -90,11 +162,11 @@ struct read_pipe : public named_pipe
 			return ::read(fd, ptr, size);
 		};
 
-		//Read from the OS owned pipe buffer to a buffer owned by the application
+		// Read from the OS owned pipe buffer to a buffer owned by the application
 		return buffer.write(pipe_reader);
 	}
-	
-	template<typename ReaderT>
+
+	template <typename ReaderT>
 	ReaderT get_reader()
 	{
 		return ReaderT(buffer);
@@ -105,8 +177,12 @@ struct read_pipe : public named_pipe
 		return buffer.to_string_view();
 	}
 
-	void clear(){}
+	void clear()
+	{
+		buffer.clear();
+	}
 
+  private:
 	BufferT buffer;
 };
 

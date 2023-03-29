@@ -16,8 +16,8 @@
 
 #include "format.h"
 #include <sstream>
+#include <thread>
 
-#include "gphoto_commands.h"
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
 bool running = true;
@@ -25,6 +25,39 @@ void term(int signum)
 {
 	running = false;
 }
+
+struct timelapse_manager
+{
+	timelapse_manager()
+		: doTimelapse(false) {}
+
+	int start(CameraObj &activeCamera, useconds_t delayMs)
+	{
+		if (delayMs > 0)
+		{
+			doTimelapse = true;
+			thread = std::thread(
+				[&]()
+				{
+					while (doTimelapse)
+					{
+						gp_error_check(activeCamera.capture());
+						usleep(delay);
+					}
+				});
+		}
+	}
+
+	void stop()
+	{
+		doTimelapse = false;
+	}
+
+  private:
+	std::atomic<bool> doTimelapse;
+	std::atomic<useconds_t> delay;
+	std::thread thread;
+};
 
 int main(int argc, char **argv)
 {
@@ -68,63 +101,103 @@ int main(int argc, char **argv)
 	{
 		CameraStorage data;
 		activeCamera.getStorageInfo(data);
-		std::printf("add %i", data.count);
-		std::cout << data.count << "\n\n";
+		// std::printf("add %i", data.array_count());
+		// std::cout << data.count << "\n\n";
 	};
 
 	if (gphoto.cameraCount() > 0)
 	{
-		if (gphoto.openCamera(0, activeCamera) < GP_OK)
-		{
-			std::printf("Could Not open camera\n");
-			return -1;
-		}
-
-		activeCamera.create_config_file(config);
-		activeCamera.create_value_file(config);
+		// try
+		// {
+			gphoto.openCamera(0, activeCamera);
+			activeCamera.create_config_file(config);
+			activeCamera.create_value_file(config);
+			activeCamera.config = &config;
+		// }
+		// catch (GPhotoException &e)
+		// {}		
 	}
 	else
 	{
 		std::printf("No cameras detected\n");
 		return -1;
 	}
+
 	using stack_allocated_buffer = stack_buffer<512>;
 
 	StatusMessenger statusMsgr(config.get_status_file_path());
 
 	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_NONBLOCK);
 
-	auto instructions = std::make_tuple(
-		Instruction<"capturing\n", void()>(capturelmb),
-		Instruction<"gettingSummery\n", void()>(getSummarylmb),
-		Instruction<"gettingStorage\n", void()>(getStorageInfolmb));
-
-//TODO Set up response que
-//TODO Update values file when camera config options are updated
-//TODO Fix radio buttons
+	// TODO Set up response que
+	// TODO Update values file when camera config options are updated
+	// TODO Fix radio buttons
 	statusMsgr.set();
+
+	timelapse_manager timelapseManager;
 	int temp = 0;
+	bool doTimelapse = false;
 	pipe_buffer<512> piperBuffer;
 	while (running)
 	{
 		// sigsuspend(&continueMask);
-		if (instruction_pipe.read())
+		for (auto pipeData : instruction_pipe)
 		{
 			for (auto match : ctre::split<"\n">(instruction_pipe.get_string_view()))
 			{
 				std::string_view matchingStr = match;
-				if (auto [match2, config, value] = ctre::match<"(\\w+)\\s+(.+)">(matchingStr); match2)
+				if (auto [match2, commandResult, valueResult] = ctre::match<"(\\w+)\\s*(.+)?">(matchingStr); match2)
 				{
-					std::string configStr((std::string_view)config);
-					std::string valueStr((std::string_view)value);
-					activeCamera.set_config_value(configStr, valueStr);
+					std::string command((std::string_view)commandResult);
+					std::string value((std::string_view)valueResult);
+
+					if (command == "capture_preview")
+					{
+						std::cout << activeCamera.capture_preview() << "\n";
+					}
+					else if (command == "capture")
+					{
+						std::cout << activeCamera.capture() << "\n";
+					}
+					else if (command == "capture_timelapse")
+					{
+						if (doTimelapse)
+						{
+							std::cout << "Timelapse End\n";
+							timelapseManager.stop();
+							doTimelapse = false;
+						}
+						else
+						{
+							try
+							{
+								int delayAmount = std::stoi(value.data());
+								timelapseManager.start(activeCamera, delayAmount);
+
+								std::cout << "Timelapse Start\n";
+								doTimelapse = true;
+							}
+							catch (std::exception &e)
+							{
+								std::cout << "Error: " << e.what() << std::endl;
+							}
+						}
+					}
+					else
+					{
+
+						activeCamera.set_config_value(command, value);
+						// TODO inform the instruction pipe that this data has been consumed and can be written over if need be
+					}
+					pipeData.consume(match.end());
 				}
 				// TODO Command parsing
 
 				std::cout << matchingStr << "\n";
 			}
-			instruction_pipe.buffer.clear();
 		}
+		instruction_pipe.clear();
+
 		usleep(10000);
 	}
 
