@@ -343,7 +343,8 @@ int CameraObj::exitCamera()
 	gp_camera_exit(ptr, context);
 	return GP_OK;
 }
-//This currently returns early as the noises my camera makes scares my dog, so testing file handling is a bit difficult atm
+
+// This currently returns early as the noises my camera makes scares my dog, so testing file handling is a bit difficult atm
 int CameraObj::capture()
 {
 	auto now = std::chrono::system_clock::now();
@@ -360,16 +361,12 @@ int CameraObj::capture()
 	// TODO WAIT FOR EVENT SO THAT I CAN CONSUME IT ALL
 	waitForEvent(10);
 
-	gp_error_check(gp_camera_file_delete(ptr, filePath.folder, filePath.name, context));
-	
-	return GP_OK;
-
 	CameraFileInfo fileInfo;
 
 	gp_camera_file_get_info(ptr, filePath.folder, filePath.name, &fileInfo, context);
 	CameraFile *file;
 	gp_file_new(&file);
-	// gp_filesystem_put_file
+
 	gp_camera_file_get(ptr,
 					   filePath.folder,
 					   filePath.name,
@@ -392,7 +389,7 @@ int CameraObj::capture()
 	captureFiles.write(data, size);
 
 	gp_camera_file_delete(ptr, filePath.folder, filePath.name, context);
-	// gp_file_free(file);
+	gp_file_free(file);
 
 	return GP_OK;
 }
@@ -436,6 +433,7 @@ int CameraObj::capture_preview()
 
 int CameraObj::waitForEvent(int timeout)
 {
+	// std::vector<gp_event_variant> events;
 	int ret;
 	while (1)
 	{
@@ -443,20 +441,38 @@ int CameraObj::waitForEvent(int timeout)
 		void *data = NULL;
 
 		ret = gp_camera_wait_for_event(ptr, timeout, &evttype, &data, context);
+		std::cout << "DataPtr : " << data << "\n";
 		switch (evttype)
 		{
 		case GP_EVENT_UNKNOWN: /**< unknown and unhandled event. argument is a char* or NULL */
+			if (data)
+				std::cout << "Unknown Event, Content" << (char *)data << "\n";
 			break;
 		case GP_EVENT_TIMEOUT: /**< timeout, no arguments */
-			break;
+			std::cout << "Event Timeout\n";
+			return GP_OK;
 		case GP_EVENT_FILE_ADDED: /**< CameraFilePath* = file path on camfs */
-			break;
+		{
+			CameraFilePath *filepath = (CameraFilePath *)data;
+			std::cout << "File Added\n\t" << filepath->folder << "/" << filepath->name << "\n";
+		}
+		break;
 		case GP_EVENT_FOLDER_ADDED: /**< CameraFilePath* = folder on camfs */
-			break;
+		{
+			std::cout << "Folder Added\n";
+			CameraFilePath *filepath = (CameraFilePath *)data;
+			std::cout << "Folder Added\n\t" << filepath->folder << "/" << filepath->name << "\n";
+		}
+		break;
 		case GP_EVENT_CAPTURE_COMPLETE: /**< last capture is complete */
-			break;
+			std::cout << "Capture Complete\n";
+			return GP_OK;
 		case GP_EVENT_FILE_CHANGED: /**< CameraFilePath* = file path on camfs */
-			break;
+		{
+			CameraFilePath *filepath = (CameraFilePath *)data;
+			std::cout << "File Changed\n\t" << filepath->folder << "/" << filepath->name << "\n";
+		}
+		break;
 		default:
 			if (data)
 				free(data);
