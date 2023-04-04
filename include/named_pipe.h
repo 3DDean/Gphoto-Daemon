@@ -6,7 +6,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
-
+#include <errno.h>
 template <std::size_t Size>
 struct pipe_buffer
 {
@@ -159,7 +159,14 @@ struct read_pipe : public named_pipe
 		int fd = named_pipe::pipe_fd;
 		auto pipe_reader = [fd](void *ptr, std::size_t size)
 		{
-			return ::read(fd, ptr, size);
+			auto amountRead = ::read(fd, ptr, size);
+			if(amountRead == -1)
+			{
+				auto errvalue = errno;
+				std::cout << strerrorname_np(errvalue) << "\t" << strerrordesc_np(errvalue) << "\n";
+			}
+
+			return amountRead;
 		};
 
 		// Read from the OS owned pipe buffer to a buffer owned by the application

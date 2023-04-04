@@ -1,4 +1,5 @@
 #include "gphoto_wrapper/file.h"
+#include <fcntl.h>
 #include <gphoto2/gphoto2-file.h>
 
 gphoto_file::gphoto_file()
@@ -15,6 +16,13 @@ gphoto_file::gphoto_file(const int fd)
 	gp_error_check(
 		gp_file_new_from_fd(&ptr, fd),
 		"Failed to create CameraFile from fd");
+}
+
+gphoto_file::gphoto_file(const int dirfd, std::string_view filename)
+	: ptr(nullptr)
+
+{
+	int fd = openat(dirfd, filename.data(), O_CREAT | O_TRUNC, O_RDWR);
 }
 
 gphoto_file::gphoto_file(CameraFileHandler *handler, void *priv)
@@ -54,6 +62,12 @@ gphoto_file &gphoto_file::operator=(const gphoto_file &other)
 			"Failed to ref other CameraFile");
 	}
 	return *this;
+}
+
+void gphoto_file::unref()
+{
+	gp_file_unref(ptr);
+	ptr = nullptr;
 }
 
 // Setters and getters
@@ -149,7 +163,17 @@ std::pair<const char *, unsigned long int> gphoto_file::get_data_and_size() cons
 	return std::make_pair(data, size);
 }
 
+void gphoto_file::save(std::string_view filename)
+{
+	gp_file_save(ptr, filename.data());
+}
+
 gphoto_file::operator CameraFile *()
 {
 	return ptr;
+}
+
+gphoto_file::operator bool()
+{
+	return ptr == nullptr;
 }

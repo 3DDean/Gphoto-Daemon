@@ -8,17 +8,22 @@
 #include <string>
 #include <string_view>
 
-
 class gphoto_file
 {
   public:
 	gphoto_file();
 	gphoto_file(const int fd);
+	gphoto_file(const int dirfd, std::string_view filename);
+	gphoto_file(std::string_view filename);
 	gphoto_file(CameraFileHandler *handler, void *priv);
+
 	~gphoto_file();
 
 	gphoto_file(const gphoto_file &other);
+
 	gphoto_file &operator=(const gphoto_file &other);
+
+	void unref();
 
 	void set_name(std::string_view name);
 	std::string_view get_name() const;
@@ -32,14 +37,17 @@ class gphoto_file
 	void detect_mime_type();
 	void adjust_name_for_mime_type();
 
-	char* get_name_by_type(std::string_view basename, CameraFileType type) const;
+	char *get_name_by_type(std::string_view basename, CameraFileType type) const;
 
 	void set_data_and_size(char *data, unsigned long int size);
 
+	void save(std::string_view filename);
+
 	std::pair<const char *, unsigned long int> get_data_and_size() const;
 
-	operator CameraFile*();
-  private:
+	operator CameraFile *();
+	operator bool();
+
+  protected:
 	CameraFile *ptr;
 };
-

@@ -14,10 +14,10 @@
 #include <signal.h>
 #include <string>
 
+#include "common.h"
 #include "format.h"
 #include <sstream>
 #include <thread>
-
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
 bool running = true;
@@ -26,38 +26,162 @@ void term(int signum)
 	running = false;
 }
 
+using millisecond_duration = std::chrono::duration<double, std::milli>;
+
 struct timelapse_manager
 {
-	timelapse_manager()
-		: doTimelapse(false) {}
+	timelapse_manager(daemon_config &config)
+		: thread_state(state::idle),
+		  do_run(false),
+		  config(config)
+	{}
 
-	int start(CameraObj &activeCamera, useconds_t delayMs)
+	enum class state
 	{
-		if (delayMs > 0)
+		idle,
+		stopped,
+		running,
+		error
+	};
+
+	void start(CameraObj &activeCamera, int delayMs, std::string_view timelapse_directory)
+	{
+		auto containsIllegalTokens = ctre::search<"/">(timelapse_directory);
+
+		if (delayMs > 0 && thread_state != state::running && !containsIllegalTokens)
 		{
-			doTimelapse = true;
+			filepath = config.image_dir;
+			filepath += "/";
+			// No specified directory so use current time instead
+			if (timelapse_directory.empty())
+				filepath += get_time("%H-%M");
+
+			if (!std::filesystem::create_directory(filepath))
+			{
+				// I don't like accidentally overriding files, though I need to look into whether this includes special files
+				capture_count = std::distance(std::filesystem::directory_iterator(filepath), std::filesystem::directory_iterator{});
+			}
+			filepath += "/";
+			delay = delayMs;
+			do_run = true;
+			thread_state = state::running;
+			failed_capture_count = 0;
+			failed_capture_max = 3;
+
 			thread = std::thread(
 				[&]()
 				{
-					while (doTimelapse)
+					std::chrono::microseconds delayTime(delayMs);
+					millisecond_duration delayDuration(delayTime);
+					
+					while (do_run)
 					{
-						gp_error_check(activeCamera.capture());
-						usleep(delay);
+						try
+						{
+							auto image = activeCamera.capture();
+							std::string imagepath = filepath;
+
+							imagepath += std::to_string(capture_count);
+							capture_count++;
+							imagepath += ".jpg";
+							image.save(imagepath);
+						}
+						catch (GPhotoException &e)
+						{
+							if (failed_capture_count > failed_capture_max)
+							{
+								thread_state = state::error;
+								return;
+							}
+							failed_capture_count++;
+							// LOG CAPTURE ERROR
+						}
+						
+						std::this_thread::sleep_for(delayDuration);
 					}
+					thread_state = state::stopped;
 				});
 		}
 	}
 
 	void stop()
 	{
-		doTimelapse = false;
+		do_run = false;
 	}
 
+	bool is_running()
+	{
+		return thread_state != state::stopped;
+	}
+
+
   private:
-	std::atomic<bool> doTimelapse;
+	std::atomic<bool> do_run;
+	std::atomic<state> thread_state;
 	std::atomic<useconds_t> delay;
+
+	daemon_config &config;
+
+	std::string filepath;
 	std::thread thread;
+
+	int capture_count;
+	int failed_capture_count;
+	int failed_capture_max;
 };
+
+struct indenter
+{
+	uint32_t indentAmount = 0;
+
+	void operator()(std::string_view name, std::string_view prefix = "", std::string_view suffix = "")
+	{
+		for (size_t i = 0; i < indentAmount; i++)
+		{
+			std::cout << "  ";
+		}
+
+		std::cout << prefix << name << suffix << "\n";
+	}
+};
+
+/* TODO
+	Figure out if I can save a capture to the camera
+	and if not figure out how much ram it have available
+*/
+
+void print_folder_contents(CameraObj &cam, GPContext *context, std::string_view folder = "/", indenter printer = indenter{0})
+{
+	for (auto [name, value] : cam.list_folders(folder, context))
+	{
+		printer(name, "", "/");
+		std::string folderPath(folder);
+		if (folder.length() > 1)
+		{
+			folderPath += "/";
+		}
+		folderPath += name;
+
+		print_folder_contents(cam, context, folderPath, indenter(printer.indentAmount + 1));
+	}
+
+	for (auto [name, value] : cam.list_files(folder, context))
+	{
+		printer(name, "");
+		if (auto [match, file_extension] = ctre::match<".+\\.(\\w+)">(name); match)
+		{
+			if (file_extension == "JPG")
+			{
+				auto fileNormal = cam.get_file(folder, name, context, GP_FILE_TYPE_NORMAL);
+				auto filePreview = cam.get_file(folder, name, context, GP_FILE_TYPE_PREVIEW);
+				std::string previewPath = "thumb_";
+				previewPath += name;
+				fileNormal.save(name);
+				filePreview.save(previewPath);
+			}
+		}
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -76,6 +200,8 @@ int main(int argc, char **argv)
 
 	daemon_config config;
 
+	std::string image_to_preview = config.image_dir + "/images2023-03-31 13:04:55.jpg";
+
 	std::string pathDir = "/tmp";
 
 	std::string pipeFile = "gphoto2.pipe";
@@ -88,15 +214,10 @@ int main(int argc, char **argv)
 
 	if (gphoto.cameraCount() > 0)
 	{
-		// try
-		// {
-			gphoto.openCamera(0, activeCamera);
-			activeCamera.create_config_file(config);
-			activeCamera.create_value_file(config);
-			activeCamera.config = &config;
-		// }
-		// catch (GPhotoException &e)
-		// {}		
+		gphoto.openCamera(0, activeCamera);
+		activeCamera.create_config_file(config);
+		activeCamera.create_value_file(config);
+		activeCamera.config = &config;
 	}
 	else
 	{
@@ -106,18 +227,20 @@ int main(int argc, char **argv)
 
 	using stack_allocated_buffer = stack_buffer<512>;
 
-	StatusMessenger statusMsgr(config.get_status_file_path());
+	StatusFile application_status(config.get_status_file_path(), "log.txt");
 
 	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_NONBLOCK);
 
 	// TODO Set up response que
 	// TODO Update values file when camera config options are updated
 	// TODO Fix radio buttons
-	statusMsgr.set();
+	application_status.set_state();
 
-	timelapse_manager timelapseManager;
-	int temp = 0;
-	bool doTimelapse = false;
+	timelapse_manager timelapseManager(config);
+
+	int capture_count = 0;
+	int preview_count = 0;
+
 	pipe_buffer<512> piperBuffer;
 	while (running)
 	{
@@ -134,40 +257,84 @@ int main(int argc, char **argv)
 
 					if (command == "capture_preview")
 					{
-						std::cout << activeCamera.capture_preview() << "\n";
+						try
+						{
+							application_status.set_busy("capturing_preview");
+							gphoto_file preview_capture = activeCamera.capture_preview();
+							std::string captureName = config.image_dir;
+							captureName += "/";
+							captureName += "preview";
+							captureName += std::to_string(preview_count);
+							captureName += ".jpg";
+
+							preview_capture.save(captureName);
+
+							application_status.set_finished("");
+							++preview_count;
+						}
+						catch (GPhotoException &e)
+						{
+							application_status.set_failed(e.what());
+						}
 					}
 					else if (command == "capture")
 					{
-						std::cout << activeCamera.capture() << "\n";
+						try
+						{
+							application_status.set_busy("capturing");
+							gphoto_file last_capture = activeCamera.capture();
+							std::string captureName = config.image_dir;
+
+							captureName += "capture";
+							captureName += std::to_string(capture_count);
+							captureName += ".jpg";
+
+							last_capture.save(captureName);
+							application_status.set_finished(captureName);
+							++capture_count;
+						}
+						catch (GPhotoException &e)
+						{
+							application_status.set_failed(e.what());
+						}
 					}
 					else if (command == "capture_timelapse")
 					{
-						if (doTimelapse)
-						{
-							std::cout << "Timelapse End\n";
-							timelapseManager.stop();
-							doTimelapse = false;
-						}
-						else
+						if (!timelapseManager.is_running())
 						{
 							try
 							{
+								auto [match, delay, dirname] = ctre::match<"(\\w+) (\\w+)?">(value);
 								int delayAmount = std::stoi(value.data());
-								timelapseManager.start(activeCamera, delayAmount);
-
-								std::cout << "Timelapse Start\n";
-								doTimelapse = true;
+								timelapseManager.start(activeCamera, delayAmount, dirname);
+								
+								application_status.set_busy("capture_timelapse");
 							}
 							catch (std::exception &e)
 							{
-								std::cout << "Error: " << e.what() << std::endl;
+								application_status.set_failed(e.what());
 							}
+						}
+						else
+						{
+							timelapseManager.stop();
+							application_status.set_stopped("capture_timelapse");
 						}
 					}
 					else
 					{
+						try
+						{
+							application_status.set_busy("Setting_config");
 
-						activeCamera.set_config_value(command, value);
+							activeCamera.set_config_value(command, value);
+							application_status.set_finished("");
+						}
+						catch (std::exception &e)
+						{
+							application_status.set_failed(e.what());
+						}
+
 						// TODO inform the instruction pipe that this data has been consumed and can be written over if need be
 					}
 					pipeData.consume(match.end());
@@ -178,8 +345,9 @@ int main(int argc, char **argv)
 			}
 		}
 		instruction_pipe.clear();
-
-		usleep(10000);
+		std::chrono::microseconds delayTime(10000);
+		millisecond_duration delayDuration(delayTime);
+		std::this_thread::sleep_for(delayDuration);
 	}
 
 	return 0;

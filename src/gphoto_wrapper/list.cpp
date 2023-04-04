@@ -26,11 +26,6 @@ gphoto_list::iterator &gphoto_list::iterator::operator++()
     return *this;
 }
 
-gphoto_list::name_value_pair gphoto_list::iterator::operator*()
-{
-    return obj.get_pair(index);
-}
-
 bool gphoto_list::iterator::operator!=(const iterator &other) const
 {
     return index != other.index;

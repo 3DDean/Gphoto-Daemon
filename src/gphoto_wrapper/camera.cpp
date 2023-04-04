@@ -1,8 +1,11 @@
 #include "gphoto_wrapper/camera.h"
 
 CameraObj::CameraObj(CameraObj &cam)
-	: context(cam.context), ptr(cam.ptr)
-{}
+	: context(cam.context),
+	  ptr(cam.ptr)
+{
+	gp_camera_ref(cam.ptr);
+}
 
 CameraObj::CameraObj()
 	: cameraPath("/"),
@@ -26,7 +29,7 @@ void CameraObj::init(GPContext *contextPtr, Camera *cameraPtr, std::string_view 
 	name = nameStr;
 }
 
-int CameraObj::exitCamera()
+int CameraObj::exit()
 {
 	gp_camera_exit(ptr, context);
 	return GP_OK;
@@ -109,91 +112,31 @@ int CameraObj::triggerCapture()
 }
 
 // This currently returns early as the noises my camera makes scares my dog, so testing file handling is a bit difficult atm
-int CameraObj::capture()
+gphoto_file CameraObj::capture()
 {
-	auto now = std::chrono::system_clock::now();
-	std::time_t t = std::chrono::system_clock::to_time_t(now);
-
-	// convert to string
-	std::stringstream ss;
-	ss << std::put_time(std::localtime(&t), "%Y-%m-%d %X");
-	std::string time = ss.str();
+	// std::string time = get_time();
 
 	CameraFilePath filePath;
-	gp_error_check(gp_camera_capture(ptr, GP_CAPTURE_IMAGE, &filePath, context));
+	gp_error_check(gp_camera_capture(ptr, GP_CAPTURE_IMAGE, &filePath, context), "Image Capture Failed");
 
 	// TODO WAIT FOR EVENT SO THAT I CAN CONSUME IT ALL
 	waitForEvent(10);
 
-	CameraFileInfo fileInfo;
-
-	gp_camera_file_get_info(ptr, filePath.folder, filePath.name, &fileInfo, context);
-
-	// int fd = open(filePath.name, O_CREAT | O_TRUNC, O_RDWR);
-
-	CameraFile *file;
-	gp_file_new(&file);
-
-	gp_camera_file_get(ptr,
-					   filePath.folder,
-					   filePath.name,
-					   GP_FILE_TYPE_NORMAL,
-					   file,
-					   context);
-
-	// std::string_view folder = storageInformation.basedir();
-
-	const char *data;
-	unsigned long size;
-
-	gp_file_save(file, "Testing.jpg");
-	gp_file_get_data_and_size(file, &data, &size);
-
-	std::string_view filenameStr(time.c_str());
-
-	std::ofstream captureFiles = config->get_image_dir(time, "jpg");
-	captureFiles.write(data, size);
-
-	gp_camera_file_delete(ptr, filePath.folder, filePath.name, context);
-	gp_file_free(file);
-
-	return GP_OK;
+	return get_file(&filePath, context, GP_FILE_TYPE_NORMAL);
 }
 
-int CameraObj::capture_preview()
+gphoto_file CameraObj::capture_preview()
 {
 	int ret;
-	CameraFile *file;
-	const char *filename;
+	gphoto_file file;
 
 	waitForEvent(10);
-	gp_error_check(gp_file_new(&file), "Failed to create new file handle");
-	// gp_error_check(gp_file_adjust_name_for_mime_type(file), "Failed to adjust name");
 
-	ret = gp_camera_capture_preview(ptr, file, context);
+	gp_error_check(gp_camera_capture_preview(ptr, file, context), "Could not capture preview.\n");
 
-	if ((ret != GP_OK) && (ret != GP_ERROR_NOT_SUPPORTED))
-	{
-		gp_file_free(file);
-		printf("Could not capture preview.\n");
-		return ret;
-	}
-
-	const char *data;
-	unsigned long size;
-	gp_file_get_data_and_size(file, &data, &size);
-
-	gp_error_check(gp_file_get_name(file, &filename), "Failed to get file name");
-
-	std::string_view filenameStr(filename);
-
-	std::ofstream captureFiles = config->get_camera_preview_file("jpg");
-	captureFiles.write(data, size);
-
-	gp_file_free(file);
-	return GP_OK;
+	return file;
 }
-
+//TODO Determine if there is a memory leak here
 int CameraObj::waitForEvent(int timeout)
 {
 	// std::vector<gp_event_variant> events;
@@ -217,6 +160,10 @@ int CameraObj::waitForEvent(int timeout)
 		case GP_EVENT_FILE_ADDED: /**< CameraFilePath* = file path on camfs */
 		{
 			CameraFilePath *filepath = (CameraFilePath *)data;
+
+			// auto [whole, match] = ctre::match<".+(\\.\\w+)">(filepath->name);
+			// std::string filepath = config->image_dir;
+
 			std::cout << "File Added\n\t" << filepath->folder << "/" << filepath->name << "\n";
 		}
 		break;

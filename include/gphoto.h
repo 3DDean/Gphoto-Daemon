@@ -4,6 +4,8 @@
 #include "format.h"
 #include "gphoto-widget.h"
 #include "gphoto_wrapper/camera.h"
+#include "gphoto_wrapper/port_info.h"
+
 #include <chrono>
 #include <gphoto2/gphoto2-camera.h>
 #include <iomanip>
@@ -37,11 +39,9 @@ struct GPhoto
 	const char *port = "usb:";
 
 	GPContext *context;
-	CameraList *list = NULL;
-	GPPortInfoList *gpinfolist;
+	gphoto_list cameraList;
+	gphoto_port_info_list port_list;
 	CameraAbilitiesList *abilities = NULL;
-	// TODO Implement
-	//  std::vector<CameraListEntry> detectedCameras;
 
 	GPhoto();
 	~GPhoto();
@@ -52,7 +52,7 @@ struct GPhoto
 
 	int cameraCount()
 	{
-		return gp_list_count(list);
+		return gp_list_count(cameraList);
 	}
 };
 

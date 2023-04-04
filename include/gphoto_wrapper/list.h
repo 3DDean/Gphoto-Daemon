@@ -14,7 +14,10 @@ public:
     {
         iterator(int index, gphoto_list &obj);
         iterator &operator++();
-        inline name_value_pair operator*();
+        inline name_value_pair operator*()
+		{
+			return obj.get_pair(index);
+		}
         bool operator!=(const iterator &other) const;
 
     private:

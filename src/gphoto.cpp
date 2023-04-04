@@ -143,33 +143,27 @@ GPhoto::GPhoto()
 GPhoto::~GPhoto()
 {
 	gp_context_unref(context);
-	gp_port_info_list_free(gpinfolist);
 	gp_abilities_list_free(abilities);
-	gp_list_free(list);
 }
 
 // This detects cameras
 int GPhoto::detectCameras()
 {
-	int ret;
 
-	gp_port_info_list_new(&gpinfolist);
-	gp_error_check(gp_port_info_list_load(gpinfolist));
-
-	int count1 = gp_port_info_list_count(gpinfolist);
+	port_list.load();
+	int count1 = port_list.count();
 
 	// Buffer read
-	gp_error_check(gp_port_info_list_lookup_path(gpinfolist, "usb:"));
-	int count2 = gp_port_info_list_count(gpinfolist);
+	port_list.lookup_path("usb:");
+	int count2 = port_list.count();
 
 	/* Detect all the cameras that can be autodetected... */
 	// Check if list is actually new
-	gp_error_check(gp_list_new(&list), "ReturnValue %i", 1);
 
 	/* Load all the camera drivers we have... */
 	gp_error_check(gp_abilities_list_new(&abilities));
 	gp_error_check(gp_abilities_list_load(abilities, context));
-	gp_error_check(gp_abilities_list_detect(abilities, gpinfolist, list, context));
+	gp_error_check(gp_abilities_list_detect(abilities, port_list, cameraList, context));
 
 	return GP_OK;
 }
@@ -182,7 +176,7 @@ void GPhoto::openCamera(int index, CameraObj &camera)
 
 	if (index < cameraCount())
 	{
-		CameraListEntry cameraEntry(list, index);
+		CameraListEntry cameraEntry(cameraList, index);
 		const char *nameStr = cameraEntry.name;
 
 		// const char *nameStr = detectedCameras[index].name;

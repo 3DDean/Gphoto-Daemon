@@ -12,12 +12,17 @@ set(GPHOTO_WRAPPER_SRC
 	list.cpp
 	camera.cpp
 	camera_storage.cpp
+	port_info.cpp
 )
 
 list(TRANSFORM GPHOTO_WRAPPER_SRC PREPEND gphoto_wrapper/)
 
-
-set(SROURCE_FILES main.cpp gphoto.cpp named_pipe.cpp ${GPHOTO_WRAPPER_SRC})
+set(SROURCE_FILES 
+	main.cpp
+	gphoto.cpp
+	named_pipe.cpp
+	${GPHOTO_WRAPPER_SRC}
+)
 
 list(TRANSFORM SROURCE_FILES PREPEND ${SRC_DIR}/)
 

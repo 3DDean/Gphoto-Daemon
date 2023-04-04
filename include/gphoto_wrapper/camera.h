@@ -2,15 +2,24 @@
 #include "daemon_config.h"
 #include "format.h"
 #include "gphoto-widget.h"
-#include <chrono>
+#include "gphoto_wrapper/file.h"
+#include "gphoto_wrapper/list.h"
 #include <gphoto2/gphoto2-camera.h>
-#include <iomanip>
-#include <sstream>
 #include <stack>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
 #include <vector>
+
+struct camera_config
+{
+	camera_config(std::string_view camera_name)
+	{
+	}
+	// std::filesystem::path
+	std::string config_file;
+	std::string value_file;
+};
 
 struct CameraObj
 {
@@ -20,16 +29,59 @@ struct CameraObj
 	~CameraObj();
 
 	void init(GPContext *contextPtr, Camera *cameraPtr, std::string_view nameStr);
+	int exit();
 
 	bool create_config_file(const daemon_config &config);
 	bool create_value_file(const daemon_config &config);
 	void set_config_value(std::string_view name, std::string_view value);
 
-	int exitCamera();
 	int triggerCapture();
-	int capture_preview();
+	gphoto_file capture_preview();
 	int waitForEvent(int timeout);
-	int capture();
+	gphoto_file capture();
+
+	gphoto_file get_file(std::string_view folderPath,
+						 std::string_view fileName,
+						 GPContext *context,
+						 CameraFileType fileType)
+	{
+		gphoto_file file;
+		gp_camera_file_get(ptr, folderPath.data(), fileName.data(), fileType, file, context);
+
+		return file;
+	};
+
+	gphoto_file get_file(CameraFilePath *filePath, GPContext *context, CameraFileType fileType)
+	{
+		gphoto_file file;
+		gp_camera_file_get(ptr, filePath->folder, filePath->name, fileType, file, context);
+
+		return file;
+	};
+
+	gphoto_file save_file(CameraFilePath *filePath, GPContext *context, CameraFileType fileType)
+	{
+		gphoto_file file;
+		gp_camera_file_get(ptr, filePath->folder, filePath->name, fileType, file, context);
+
+		return file;
+	};
+
+	auto list_folders(std::string_view folder, GPContext *context)
+	{
+		gphoto_list fileList;
+		gp_camera_folder_list_folders(ptr, folder.data(), fileList, context);
+
+		return fileList;
+	}
+
+	gphoto_list list_files(std::string_view folder, GPContext *context)
+	{
+		gphoto_list fileList;
+		gp_camera_folder_list_files(ptr, folder.data(), fileList, context);
+
+		return fileList;
+	}
 
 	daemon_config *config;
 
@@ -38,7 +90,6 @@ struct CameraObj
 	std::string cameraPath;
 	GPContext *context = nullptr;
 	Camera *ptr = nullptr;
-
 
 	// Linear implementation
 	void process_widget(camera_widget root_widget, auto &&element_func, auto &&push_func, auto &&pop_func)

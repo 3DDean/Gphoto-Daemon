@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+//TODO Reconfigure this so it is all relative to each camera
 struct daemon_config
 {
 	void make_directory(const char *path)
@@ -25,11 +26,19 @@ struct daemon_config
 		make_directory(path.data());
 	}
 
+	daemon_config(std::string_view config_path);
+
 	daemon_config()
 	{
 		make_directory(main_dir);
 		camera_dir = main_dir + "/" + camera_dir;
 		make_directory(camera_dir);
+
+		image_dir = camera_dir + "/" + image_dir;
+		preview_dir = camera_dir + "/" + preview_dir;
+
+		make_directory(image_dir);
+		make_directory(preview_dir);
 	}
 
 	auto new_camera_widget_file(std::string camera_name) const
@@ -53,16 +62,41 @@ struct daemon_config
 	{
 		return main_dir + "/" + statusFile;
 	}
+	auto get_capture_file_path()
+	{
+		return main_dir + "/last_capture";
+	}
+	auto get_result_file_path()
+	{
+		return main_dir + "/result";
+	}
 	auto get_pipe_file_path(){
 		return main_dir + "/" + pipeFile;
 	}
 
+	auto get_image_path(std::string_view filename)
+	{
+		return main_dir + "/" + image_dir + "/" + filename.data();
+	}
+
 	auto get_instruction_pipe_path(){}
+
+	auto get_thumbnail_file(std::string_view filename)
+	{
+		return std::string(camera_dir + "/" + image_dir + "/thumb_" + filename.data());
+
+	}
+	auto get_image_file(std::string_view filename)
+	{
+		return std::string(camera_dir + "/" + image_dir + "/" + filename.data());
+	}
 
 	std::string config_dir;
 
 	std::string main_dir = "/tmp/gphoto_daemon";
 	std::string camera_dir = "cameras";
+	std::string image_dir = "images";
+	std::string preview_dir = "preview";
 
 	std::string pipeFile = "gphoto2.pipe";
 	std::string statusFile = "status_gphoto2.txt";
