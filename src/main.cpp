@@ -100,6 +100,7 @@ struct timelapse_manager
 						std::this_thread::sleep_for(delayDuration);
 					}
 					thread_state = state::stopped;
+					return;
 				});
 		}
 	}
@@ -107,11 +108,12 @@ struct timelapse_manager
 	void stop()
 	{
 		do_run = false;
+		thread.join();
 	}
 
 	bool is_running()
 	{
-		return thread_state != state::stopped;
+		return do_run;
 	}
 
 
@@ -283,13 +285,14 @@ int main(int argc, char **argv)
 						{
 							application_status.set_busy("capturing");
 							gphoto_file last_capture = activeCamera.capture();
-							std::string captureName = config.image_dir;
-
-							captureName += "capture";
+							std::string capture_path = config.image_dir;
+							capture_path += "/";
+							std::string captureName = "capture";
 							captureName += std::to_string(capture_count);
 							captureName += ".jpg";
 
-							last_capture.save(captureName);
+							capture_path += captureName;
+							last_capture.save(capture_path);
 							application_status.set_finished(captureName);
 							++capture_count;
 						}
@@ -325,7 +328,7 @@ int main(int argc, char **argv)
 					{
 						try
 						{
-							application_status.set_busy("Setting_config");
+							application_status.set_busy("setting_config");
 
 							activeCamera.set_config_value(command, value);
 							application_status.set_finished("");

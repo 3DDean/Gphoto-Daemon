@@ -34,7 +34,7 @@ struct stack_buffer
 
 		if (amountRead < 0)
 		{
-			throw "UGH";
+			return 0;
 		}
 		if (size + amountRead > MaxSize)
 		{

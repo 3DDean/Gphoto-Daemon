@@ -164,7 +164,8 @@ struct widget_with_choices
 	{
 		std::string str(str_view);
 		int value = std::stoi(str);
-		if (value >= 0 && value > gp_widget_count_choices(widget))
+		int widgetCount = gp_widget_count_choices(widget);
+		if (value >= 0 && value < widgetCount)
 		{
 			const_str str_value = get_choice(widget, value);
 
@@ -315,12 +316,12 @@ inline auto get_single_config(Camera *camera, GPContext *context, std::string_vi
 	gp_camera_get_single_config(camera, name.data(), &window, context);
 	return window;
 }
-// inline auto set_single_config(Camera *camera, GPContext *context, std::string_view name)
-// {
-// 	CameraWidget *window;
-// 	gp_camera_get_single_config(ptr, name.data(), &window, context);
-// 	return window;
-// }
+inline auto set_single_config(Camera *camera, GPContext *context, std::string_view name)
+{
+	CameraWidget *window;
+	gp_camera_get_single_config(camera, name.data(), &window, context);
+	return window;
+}
 
 struct camera_widget
 {
