@@ -163,7 +163,7 @@ struct read_pipe : public named_pipe
 			if(amountRead == -1)
 			{
 				auto errvalue = errno;
-				std::cout << strerrorname_np(errvalue) << "\t" << strerrordesc_np(errvalue) << "\n";
+				std::cout << strerror(errvalue) << "\n";
 			}
 
 			return amountRead;

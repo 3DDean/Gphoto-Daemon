@@ -1,6 +1,5 @@
 #include "gphoto.h"
 #include "gphoto-error.h"
-#include "gphoto_wrapper/event.h"
 #include <chrono>
 #include <fcntl.h>
 #include <fstream>

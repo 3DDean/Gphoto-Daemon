@@ -601,16 +601,6 @@ struct format_string
 	}
 };
 
-template <Fixed_String... SubStrs>
-using format_multi_string = format_string<make_fixed_string<SubStrs...>()>;
-
-// Temporary
-template <Fixed_String Str>
-constexpr auto operator"" _fStr()
-{
-	return Str;
-}
-
 template <typename T>
 struct formater
 {};

@@ -31,7 +31,7 @@ add_executable(GphotoDeamon ${SROURCE_FILES})
 include_directories(include libgphoto2)
 include_directories(compile-time-regular-expressions/include)
 
-target_link_libraries(GphotoDeamon gphoto2 gphoto2_port)
+target_link_libraries(GphotoDeamon gphoto2 gphoto2_port pthread)
 
 set(SROURCE_FILES_C main.c GPhoto2D.c GPhoto2DUtils.c GPhoto2DCmd.c)
 
