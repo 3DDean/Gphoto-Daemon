@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "commander.h"
 #include "daemon_config.h"
 #include "gphoto-widget.h"
 #include "gphoto.h"
@@ -16,6 +15,7 @@
 
 #include "common.h"
 #include "format.h"
+#include "status.h"
 #include <sstream>
 #include <thread>
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
