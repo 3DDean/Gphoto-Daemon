@@ -9,37 +9,9 @@
 //TODO Reconfigure this so it is all relative to each camera
 struct daemon_config
 {
-	void make_directory(const char *path)
-	{
-		struct stat st = {0};
-		if (stat(path, &st) == -1)
-		{
-			mkdir(path, 0777);
-		}
-	}
-	void make_directory(std::string_view path)
-	{
-		make_directory(path.data());
-	}
-	void make_directory(std::string path)
-	{
-		make_directory(path.data());
-	}
+	daemon_config();
 
-	daemon_config(std::string_view config_path);
-
-	daemon_config()
-	{
-		make_directory(main_dir);
-		camera_dir = main_dir + "/" + camera_dir;
-		make_directory(camera_dir);
-
-		image_dir = camera_dir + "/" + image_dir;
-		preview_dir = camera_dir + "/" + preview_dir;
-
-		make_directory(image_dir);
-		make_directory(preview_dir);
-	}
+	void init(std::string_view config_path);
 
 	auto new_camera_widget_file(std::string camera_name) const
 	{
@@ -91,16 +63,16 @@ struct daemon_config
 		return std::string(camera_dir + "/" + image_dir + "/" + filename.data());
 	}
 
-	std::string config_dir;
+	std::string log_file;
 
-	std::string main_dir = "/tmp/gphoto_daemon";
-	std::string camera_dir = "cameras";
-	std::string image_dir = "images";
-	std::string preview_dir = "preview";
+	std::string main_dir;
+	std::string camera_dir;
+	std::string image_dir;
+	std::string preview_dir;
 
-	std::string pipeFile = "gphoto2.pipe";
-	std::string statusFile = "status_gphoto2.txt";
-	std::string widgetFile = "gphoto2_widget.txt";
+	std::string pipeFile;
+	std::string statusFile;
+	std::string widgetFile;
 
-	std::string preview_file = "capture_preview";
+	std::string preview_file;
 };

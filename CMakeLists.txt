@@ -21,6 +21,7 @@ set(SROURCE_FILES
 	main.cpp
 	gphoto.cpp
 	named_pipe.cpp
+	daemon_config.cpp
 	${GPHOTO_WRAPPER_SRC}
 )
 

@@ -73,7 +73,7 @@ struct timelapse_manager
 				{
 					std::chrono::microseconds delayTime(delayMs);
 					millisecond_duration delayDuration(delayTime);
-					
+
 					while (do_run)
 					{
 						try
@@ -96,7 +96,7 @@ struct timelapse_manager
 							failed_capture_count++;
 							// LOG CAPTURE ERROR
 						}
-						
+
 						std::this_thread::sleep_for(delayDuration);
 					}
 					thread_state = state::stopped;
@@ -115,7 +115,6 @@ struct timelapse_manager
 	{
 		return do_run;
 	}
-
 
   private:
 	std::atomic<bool> do_run;
@@ -185,8 +184,107 @@ void print_folder_contents(CameraObj &cam, GPContext *context, std::string_view 
 	}
 }
 
-int main(int argc, char **argv)
+// template <typename T>
+// class c_array
+// {
+//   public:
+// 	c_array(T *array, size_t size)
+// 		: data(array), length(size) {}
+
+// 	T &operator[](size_t index)
+// 	{
+// 		return data[index];
+// 	}
+
+// 	const T &operator[](size_t index) const
+// 	{
+// 		return data[index];
+// 	}
+
+// 	T *begin()
+// 	{
+// 		return data;
+// 	}
+
+// 	T *end()
+// 	{
+// 		return data + length;
+// 	}
+
+// 	const T *begin() const
+// 	{
+// 		return data;
+// 	}
+
+// 	const T *end() const
+// 	{
+// 		return data + length;
+// 	}
+
+//   private:
+// 	T *data;
+// 	size_t length;
+// };
+
+// TODO Create template
+struct cli_args
 {
+	void set_value(std::stringstream &error_stream, std::string_view flagName, auto& arg_itt)
+	{
+		++arg_itt;
+		if (flagName == "config")
+		{
+			config_file = arg_itt->data();
+		}
+		else
+		{
+			error_stream << "unrecognized argument" << *arg_itt << "\n";
+		}
+	}
+
+	std::string_view config_file;
+};
+
+cli_args process_args(int argc, const char **argv)
+{
+	cli_args args;
+
+	std::vector<std::string_view> arg_strs;
+	std::stringstream error_stream;
+
+	for(std::size_t i = 0; i < argc; i++)
+		arg_strs.emplace_back(argv[i]);
+
+	for(auto itt = arg_strs.begin(); itt < arg_strs.end(); itt++)
+	{
+		std::string_view arg(*itt);
+		try
+		{
+			if (arg.starts_with("--"))
+				args.set_value(error_stream, arg.substr(2, arg.size() - 2), itt);
+		}
+		catch (const std::out_of_range &e)
+		{
+			// TODO exit
+		}
+	}
+	auto error_view = error_stream.view();
+	if (error_view.empty())
+		return args;
+
+	std::cout << error_view;
+	exit(-2);
+}
+
+
+int main(int argc, const char **argv)
+{
+	daemon_config config;
+
+	{
+		cli_args args = process_args(argc, argv);
+		config.init(args.config_file);
+	}
 	// Linux signal handling, more information in signal.h
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
@@ -199,16 +297,6 @@ int main(int argc, char **argv)
 	sigaddset(&continueMask, SIGCONT);
 	sigaddset(&continueMask, SIGUSR1);
 	sigaddset(&continueMask, SIGUSR2);
-
-	daemon_config config;
-
-	std::string image_to_preview = config.image_dir + "/images2023-03-31 13:04:55.jpg";
-
-	std::string pathDir = "/tmp";
-
-	std::string pipeFile = "gphoto2.pipe";
-	std::string statusFile = "status_gphoto2.txt";
-	std::string widgetFile = "gphoto2_widget.txt";
 
 	GPhoto gphoto;
 
@@ -310,7 +398,7 @@ int main(int argc, char **argv)
 								auto [match, delay, dirname] = ctre::match<"(\\w+) (\\w+)?">(value);
 								int delayAmount = std::stoi(value.data());
 								timelapseManager.start(activeCamera, delayAmount, dirname);
-								
+
 								application_status.set_busy("capture_timelapse");
 							}
 							catch (std::exception &e)
