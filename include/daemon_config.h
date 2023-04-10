@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "status.h"
 
 //TODO Reconfigure this so it is all relative to each camera
 struct daemon_config
@@ -62,6 +63,11 @@ struct daemon_config
 	auto get_image_file(std::string_view filename)
 	{
 		return std::string(camera_dir + "/" + image_dir + "/" + filename.data());
+	}
+
+	inline auto get_status_object(std::string_view command_name)
+	{
+		return state_object(statusFile, command_name);
 	}
 
 	std::string log_file;

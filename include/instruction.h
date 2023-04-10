@@ -10,8 +10,7 @@
 template <typename T>
 struct from_string
 {
-	T operator()(std::string_view arg)
-	{};
+	T operator()(std::string_view arg){};
 };
 template <>
 struct from_string<int>
@@ -47,26 +46,30 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 	constexpr instruction(const char *command_name, funcT &&func)
 		: name(command_name), func(func) {}
 
-	bool operator()(ParentT &parent, std::vector<std::string_view> &args)
+	bool operator()(daemon_config& config, ParentT &parent, std::string_view& command, std::vector<std::string_view> &args)
 	{
-		if (args.size() == sizeof...(ArgsT))
+		if (command == name)
 		{
-			try
+			if (args.size() == sizeof...(ArgsT))
 			{
-				if constexpr (std::is_same_v<void, ReturnT>)
+				state_object status_output = config.get_status_object(name);
+				try
 				{
-					call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{});
-					std::cout << "Command finished\n";
+					if constexpr (std::is_same_v<void, ReturnT>)
+					{
+						call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{});
+					}
+					else
+					{
+						status_output.append_result(call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{}));
+					}
+					return true;
 				}
-				else
+				catch (std::exception &e)
 				{
-					std::cout << call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{}) << "\n";
+					status_output.set_result("Error", e.what());
+					return false;
 				}
-				return true;
-			}
-			catch (std::exception &e)
-			{
-				return false;
 			}
 		}
 		return false;

@@ -331,7 +331,7 @@ int main(int argc, const char **argv)
 				std::string_view matchingStr = match;
 				if (auto [match2, commandResult, valueResult] = ctre::match<"(\\w+)\\s*(.+)?">(matchingStr); match2)
 				{
-					std::string command((std::string_view)commandResult);
+					std::string_view command((std::string_view)commandResult);
 					std::string value((std::string_view)valueResult);
 
 					std::vector<std::string_view> args;
@@ -342,20 +342,19 @@ int main(int argc, const char **argv)
 					if (command == "detect_camera")
 					{
 						instruction func("detect_camera", &GPhoto::detectCameras);
-						std::cout << func(gphoto, args) << "\n";
+						func(config, gphoto, command, args);
 					}
 					else if (command == "open_camera")
 					{
 						instruction func("open_camera", &GPhoto::openCamera);
-						std::cout << func(gphoto, args) << "\n";
+						func(config, gphoto, command, args);
 					}
 					else if (command == "close_camera")
 					{
 						instruction func("close_camera", &GPhoto::closeCamera);
-						std::cout << func(gphoto, args) << "\n";
+						func(config, gphoto, command, args);
 					}
-
-					if (command == "capture_preview")
+					else if (command == "capture_preview")
 					{
 						try
 						{

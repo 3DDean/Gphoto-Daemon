@@ -1,6 +1,70 @@
 #pragma once
+#include <exception>
 #include <fstream>
+#include <sstream>
 #include <string>
+
+struct file_access_exception : public std::exception
+{
+	file_access_exception(std::string_view state, std::string_view file)
+		: message(state)
+	{
+		message += " ";
+		message += file;
+	}
+
+	virtual const char *what() const noexcept override
+	{
+		return message.c_str();
+	}
+
+  private:
+	std::string message;
+};
+
+struct state_object
+{
+	state_object(std::string_view status_path, std::string_view command)
+		: command(command),
+		  status_path(status_path)
+	{
+		std::ofstream status_file(status_path.data(), std::ios_base::trunc | std::ios_base::out);
+
+		if (!status_file.is_open())
+			throw file_access_exception("failed to open", status_path);
+
+		status_file << "executing " << command << "\n";
+		status_file.close();
+		result << "finished " << command << "\n";
+	}
+
+	~state_object()
+	{
+		std::ofstream status_file(status_path.data(), std::ios_base::trunc | std::ios_base::out);
+
+		// if (!status_file.is_open())
+		// 	throw file_access_exception("failed to open", status_path);
+
+		status_file << result.str();
+		status_file.close();
+	};
+
+	void set_result(std::string_view state, std::string_view arg)
+	{
+		result.seekp(0);
+		result << state << " " << command << "\n";
+		result << arg;
+	}
+	void append_result(auto str)
+	{
+		result << str;
+	}
+
+  private:
+	std::string_view status_path;
+	std::string_view command;
+	std::ostringstream result;
+};
 
 struct StatusFile
 {
