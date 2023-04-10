@@ -6,6 +6,7 @@
 #include "gphoto_wrapper/camera.h"
 #include "gphoto_wrapper/camera_abilities.h"
 #include "gphoto_wrapper/port_info.h"
+#include "instruction.h"
 
 #include <chrono>
 #include <gphoto2/gphoto2-camera.h>
@@ -40,13 +41,13 @@ struct GPhoto
 	GPhoto();
 	~GPhoto();
 
-	void openCamera(int index, CameraObj &camera);
-
+	int openCamera(int index);
+	bool closeCamera(int index);
 	void detectCameras();
 
 	int cameraCount()
 	{
-		return gp_list_count(cameraList);
+		return cameraList.count();
 	}
 
   private:
@@ -56,6 +57,7 @@ struct GPhoto
 	gphoto_list cameraList;
 	gphoto_port_info_list port_list;
 	camera_abilities_list abilities;
+	std::vector<CameraObj> loadedCameras;
 };
 
 struct FileData

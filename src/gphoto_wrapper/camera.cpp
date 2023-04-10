@@ -1,12 +1,5 @@
 #include "gphoto_wrapper/camera.h"
 
-CameraObj::CameraObj(CameraObj &cam)
-	: context(cam.context),
-	  ptr(cam.ptr)
-{
-	gp_camera_ref(cam.ptr);
-}
-
 CameraObj::CameraObj()
 	: cameraPath("/"),
 	  context(nullptr),

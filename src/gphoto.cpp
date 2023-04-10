@@ -96,10 +96,12 @@ void GPhoto::detectCameras()
 	abilities.detect(port_list, cameraList, context);;
 }
 
-void GPhoto::openCamera(int index, CameraObj &camera)
+int GPhoto::openCamera(int index)
 {
 	int ret, modelDescriptor, portDescriptor;
 	CameraAbilities camAbilities;
+	int cameraIndex = loadedCameras.size();
+	auto camera = loadedCameras.emplace_back();
 
 	if (index < cameraCount())
 	{
@@ -127,7 +129,9 @@ void GPhoto::openCamera(int index, CameraObj &camera)
 	{
 		throw std::logic_error("No camera's detected.");
 	}
+	return cameraIndex;
 }
+bool GPhoto::closeCamera(int index){}
 
 CameraPath::CameraPath(){};
 CameraPath::CameraPath(const char *folder, const char *name)

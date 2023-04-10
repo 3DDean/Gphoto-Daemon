@@ -229,7 +229,7 @@ void print_folder_contents(CameraObj &cam, GPContext *context, std::string_view 
 // TODO Create template
 struct cli_args
 {
-	void set_value(std::stringstream &error_stream, std::string_view flagName, auto& arg_itt)
+	void set_value(std::stringstream &error_stream, std::string_view flagName, auto &arg_itt)
 	{
 		++arg_itt;
 		if (flagName == "config")
@@ -252,10 +252,10 @@ cli_args process_args(int argc, const char **argv)
 	std::vector<std::string_view> arg_strs;
 	std::stringstream error_stream;
 
-	for(std::size_t i = 0; i < argc; i++)
+	for (std::size_t i = 0; i < argc; i++)
 		arg_strs.emplace_back(argv[i]);
 
-	for(auto itt = arg_strs.begin(); itt < arg_strs.end(); itt++)
+	for (auto itt = arg_strs.begin(); itt < arg_strs.end(); itt++)
 	{
 		std::string_view arg(*itt);
 		try
@@ -276,6 +276,9 @@ cli_args process_args(int argc, const char **argv)
 	exit(-2);
 }
 
+struct command_parser
+{
+};
 
 int main(int argc, const char **argv)
 {
@@ -302,19 +305,6 @@ int main(int argc, const char **argv)
 
 	CameraObj activeCamera;
 
-	if (gphoto.cameraCount() > 0)
-	{
-		gphoto.openCamera(0, activeCamera);
-		activeCamera.create_config_file(config);
-		activeCamera.create_value_file(config);
-		activeCamera.config = &config;
-	}
-	else
-	{
-		std::printf("No cameras detected\n");
-		return -1;
-	}
-
 	using stack_allocated_buffer = stack_buffer<512>;
 
 	StatusFile application_status(config.get_status_file_path(), "log.txt");
@@ -331,7 +321,6 @@ int main(int argc, const char **argv)
 	int capture_count = 0;
 	int preview_count = 0;
 
-	pipe_buffer<512> piperBuffer;
 	while (running)
 	{
 		// sigsuspend(&continueMask);
@@ -344,6 +333,27 @@ int main(int argc, const char **argv)
 				{
 					std::string command((std::string_view)commandResult);
 					std::string value((std::string_view)valueResult);
+
+					std::vector<std::string_view> args;
+					for (auto arg : ctre::split<"(?<!\") (?!\")">(value))
+						if (!arg.to_view().empty())
+							args.emplace_back(arg);
+
+					if (command == "detect_camera")
+					{
+						instruction func("detect_camera", &GPhoto::detectCameras);
+						std::cout << func(gphoto, args) << "\n";
+					}
+					else if (command == "open_camera")
+					{
+						instruction func("open_camera", &GPhoto::openCamera);
+						std::cout << func(gphoto, args) << "\n";
+					}
+					else if (command == "close_camera")
+					{
+						instruction func("close_camera", &GPhoto::closeCamera);
+						std::cout << func(gphoto, args) << "\n";
+					}
 
 					if (command == "capture_preview")
 					{

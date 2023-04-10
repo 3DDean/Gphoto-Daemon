@@ -24,7 +24,6 @@ struct camera_config
 
 struct CameraObj
 {
-	CameraObj(CameraObj &cam);
 	CameraObj();
 
 	~CameraObj();
