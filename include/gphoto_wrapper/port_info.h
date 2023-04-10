@@ -19,6 +19,7 @@ class gphoto_port_info
 	void setType(const GPPortType &type);
 
 	operator GPPortInfo *();
+	operator GPPortInfo &();
 
   private:
 	GPPortInfo ptr;

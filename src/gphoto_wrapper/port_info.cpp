@@ -52,6 +52,10 @@ gphoto_port_info::operator GPPortInfo *()
 {
 	return &ptr;
 }
+gphoto_port_info::operator GPPortInfo&()
+{
+	return ptr;
+}
 
 gphoto_port_info_list::gphoto_port_info_list()
 	: ptr(nullptr)

@@ -7,9 +7,6 @@
 #include <iostream>
 #include <string.h>
 
-static GPPortInfoList *portinfolist = NULL;
-static CameraAbilitiesList *abilities = NULL;
-
 /*
  * This detects all currently attached cameras and returns
  * them in a list. It avoids the generic usb: entry.
@@ -22,59 +19,6 @@ int sample_autodetect(CameraList *list, GPContext *context)
 	return gp_camera_autodetect(list, context);
 }
 
-int sample_open_camera(Camera **camera, const char *model, const char *port, GPContext *context)
-{
-	int ret, m, p;
-	CameraAbilities a;
-	GPPortInfo pi;
-
-	gp_error_check(gp_camera_new(camera));
-
-	if (!abilities)
-	{
-		/* Load all the camera drivers we have... */
-		gp_error_check(gp_abilities_list_new(&abilities));
-		gp_error_check(gp_abilities_list_load(abilities, context));
-	}
-
-	/* First lookup the model / driver */
-	m = gp_abilities_list_lookup_model(abilities, model);
-	if (m < GP_OK)
-		return ret;
-	gp_error_check(gp_abilities_list_get_abilities(abilities, m, &a));
-	gp_error_check(gp_camera_set_abilities(*camera, a));
-
-	if (!portinfolist)
-	{
-		/* Load all the port drivers we have... */
-		gp_error_check(gp_port_info_list_new(&portinfolist));
-		gp_error_check(gp_port_info_list_load(portinfolist));
-		gp_error_check(gp_port_info_list_count(portinfolist));
-	}
-
-	/* Then associate the camera with the specified port */
-	p = gp_port_info_list_lookup_path(portinfolist, port);
-	switch (p)
-	{
-	case GP_ERROR_UNKNOWN_PORT:
-		fprintf(stderr, "The port you specified "
-						"('%s') can not be found. Please "
-						"specify one of the ports found by "
-						"'gphoto2 --list-ports' and make "
-						"sure the spelling is correct "
-						"(i.e. with prefix 'serial:' or 'usb:').",
-				port);
-		break;
-	default:
-		break;
-	}
-	if (p < GP_OK)
-		return p;
-
-	gp_error_check(gp_port_info_list_get_info(portinfolist, p, &pi));
-	gp_error_check(gp_camera_set_port_info(*camera, pi));
-	return GP_OK;
-}
 
 void error_func(GPContext *context, const char *text, void *data)
 {
@@ -136,68 +80,48 @@ GPhoto::GPhoto()
 	// gp_context_set_cancel_func(context, cancel_func, nullptr);
 	// gp_context_set_progress_funcs(context, progress_start_func, progress_update_func, progress_stop_func, nullptr);
 	
-	gp_error_check(detectCameras());
+	port_list.load();
+	abilities.load(context);
+	detectCameras();
 }
 
 GPhoto::~GPhoto()
 {
 	gp_context_unref(context);
-	gp_abilities_list_free(abilities);
 }
 
 // This detects cameras
-int GPhoto::detectCameras()
+void GPhoto::detectCameras()
 {
-
-	port_list.load();
-	int count1 = port_list.count();
-
-	// Buffer read
-	port_list.lookup_path("usb:");
-	int count2 = port_list.count();
-
-	/* Detect all the cameras that can be autodetected... */
-	// Check if list is actually new
-
-	/* Load all the camera drivers we have... */
-	gp_error_check(gp_abilities_list_new(&abilities));
-	gp_error_check(gp_abilities_list_load(abilities, context));
-	gp_error_check(gp_abilities_list_detect(abilities, port_list, cameraList, context));
-
-	return GP_OK;
+	abilities.detect(port_list, cameraList, context);;
 }
 
 void GPhoto::openCamera(int index, CameraObj &camera)
 {
-	int ret, m, p;
-	CameraAbilities a;
-	GPPortInfo pi;
+	int ret, modelDescriptor, portDescriptor;
+	CameraAbilities camAbilities;
 
 	if (index < cameraCount())
 	{
 		CameraListEntry cameraEntry(cameraList, index);
 		const char *nameStr = cameraEntry.name;
 
-		// const char *nameStr = detectedCameras[index].name;
-		Camera *ptr = NULL;
 		fprintf(stderr, "name is %s\n", nameStr);
 
-		ret = sample_open_camera(&ptr, nameStr, port, context);
-		if (ret < GP_OK)
-		{
-			fprintf(stderr, "camera %s at %s not found.\n", nameStr, port);
-			// gp_list_free(list);
-			throw GPhotoException(ret, "Camera not found at specified port");
-		}
-		// Double check this
-		// gp_list_free(list);
+		modelDescriptor = abilities.lookup_model(nameStr);
+		/* First lookup the model / driver */
 
-		ret = gp_camera_init(ptr, context);
-		if (ret < GP_OK)
-		{
-			throw std::logic_error("No camera auto detected.\n");
-		}
-		camera.init(context, ptr, nameStr);
+		abilities.get_abilities(modelDescriptor, &camAbilities);
+
+		/* Then associate the camera with the specified port */
+		portDescriptor = port_list.lookup_path(port);
+
+		auto port_info = port_list.getPortInfoListInfo(portDescriptor);
+
+		camera.init(context, nameStr);
+		camera.set_abilities(camAbilities);
+
+		camera.set_port_info(port_info);
 	}
 	else
 	{

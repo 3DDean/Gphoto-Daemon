@@ -4,6 +4,7 @@
 #include "format.h"
 #include "gphoto-widget.h"
 #include "gphoto_wrapper/camera.h"
+#include "gphoto_wrapper/camera_abilities.h"
 #include "gphoto_wrapper/port_info.h"
 
 #include <chrono>
@@ -36,24 +37,25 @@ struct CameraListEntry
 
 struct GPhoto
 {
-	const char *port = "usb:";
-
-	GPContext *context;
-	gphoto_list cameraList;
-	gphoto_port_info_list port_list;
-	CameraAbilitiesList *abilities = NULL;
-
 	GPhoto();
 	~GPhoto();
 
 	void openCamera(int index, CameraObj &camera);
 
-	int detectCameras();
+	void detectCameras();
 
 	int cameraCount()
 	{
 		return gp_list_count(cameraList);
 	}
+
+  private:
+	const char *port = "usb:";
+
+	GPContext *context;
+	gphoto_list cameraList;
+	gphoto_port_info_list port_list;
+	camera_abilities_list abilities;
 };
 
 struct FileData

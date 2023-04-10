@@ -32,7 +32,7 @@ struct daemon_config
 
 	auto get_status_file_path()
 	{
-		return main_dir + "/" + statusFile;
+		return statusFile;
 	}
 	auto get_capture_file_path()
 	{
@@ -42,8 +42,9 @@ struct daemon_config
 	{
 		return main_dir + "/result";
 	}
-	auto get_pipe_file_path(){
-		return main_dir + "/" + pipeFile;
+	auto get_pipe_file_path()
+	{
+		return pipeFile;
 	}
 
 	auto get_image_path(std::string_view filename)

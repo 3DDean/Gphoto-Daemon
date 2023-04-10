@@ -4,6 +4,7 @@
 #include "gphoto-widget.h"
 #include "gphoto_wrapper/file.h"
 #include "gphoto_wrapper/list.h"
+#include "gphoto_wrapper/port_info.h"
 #include <gphoto2/gphoto2-camera.h>
 #include <stack>
 #include <stdio.h>
@@ -28,7 +29,7 @@ struct CameraObj
 
 	~CameraObj();
 
-	void init(GPContext *contextPtr, Camera *cameraPtr, std::string_view nameStr);
+	void init(GPContext *contextPtr, std::string_view nameStr);
 	int exit();
 
 	bool create_config_file(const daemon_config &config);
@@ -82,6 +83,14 @@ struct CameraObj
 
 		return fileList;
 	}
+
+	void set_abilities(CameraAbilities abilities);
+	CameraAbilities *get_abilities();
+	void set_port_info(gphoto_port_info& info);
+	GPPortInfo *get_port_info();
+
+	void set_port_speed(int speed);
+	int get_port_speed();
 
 	daemon_config *config;
 

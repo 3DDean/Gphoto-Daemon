@@ -13,6 +13,7 @@ set(GPHOTO_WRAPPER_SRC
 	camera.cpp
 	camera_storage.cpp
 	port_info.cpp
+	camera_abilities.cpp
 )
 
 list(TRANSFORM GPHOTO_WRAPPER_SRC PREPEND gphoto_wrapper/)

@@ -22,10 +22,11 @@ CameraObj::~CameraObj()
 	}
 }
 
-void CameraObj::init(GPContext *contextPtr, Camera *cameraPtr, std::string_view nameStr)
+void CameraObj::init(GPContext *contextPtr, std::string_view nameStr)
 {
 	context = contextPtr;
-	ptr = cameraPtr;
+	gp_error_check(gp_camera_new(&ptr), "Failed to create new camera");
+	gp_error_check(gp_camera_init(ptr, context),  "Failed to init camera device");
 	name = nameStr;
 }
 
@@ -136,7 +137,7 @@ gphoto_file CameraObj::capture_preview()
 
 	return file;
 }
-//TODO Determine if there is a memory leak here
+// TODO Determine if there is a memory leak here
 int CameraObj::waitForEvent(int timeout)
 {
 	// std::vector<gp_event_variant> events;
@@ -193,4 +194,44 @@ int CameraObj::waitForEvent(int timeout)
 			break;
 	}
 	return ret;
+}
+CameraAbilities *CameraObj::get_abilities()
+{
+	CameraAbilities *abilities;
+	int ret = gp_camera_get_abilities(ptr, abilities);
+	gp_error_check(ret, "Failed to get camera abilities");
+	return abilities;
+}
+
+GPPortInfo *CameraObj::get_port_info()
+{
+	GPPortInfo *info;
+	int ret = gp_camera_get_port_info(ptr, info);
+	gp_error_check(ret, "Failed to get port info");
+	return info;
+}
+
+int CameraObj::get_port_speed()
+{
+	int port_speed = gp_camera_get_port_speed(ptr);
+	gp_error_check(port_speed, "Failed to get port speed");
+	return port_speed;
+}
+
+void CameraObj::set_abilities(CameraAbilities abilities)
+{
+	int ret = gp_camera_set_abilities(ptr, abilities);
+	gp_error_check(ret, "Failed to set camera abilities");
+}
+
+void CameraObj::set_port_info(gphoto_port_info& info)
+{
+	int ret = gp_camera_set_port_info(ptr, info);
+	gp_error_check(ret, "Failed to set port info");
+}
+
+void CameraObj::set_port_speed(int speed)
+{
+	int ret = gp_camera_set_port_speed(ptr, speed);
+	gp_error_check(ret, "Failed to set port speed");
 }
