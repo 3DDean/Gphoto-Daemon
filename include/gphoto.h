@@ -43,7 +43,7 @@ struct GPhoto
 
 	int openCamera(int index);
 	bool closeCamera(int index);
-	void detectCameras();
+	int detectCameras();
 
 	int cameraCount()
 	{

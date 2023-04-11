@@ -21,6 +21,11 @@ void camera_abilities_list::load_dir(const char *dir, GPContext *context)
 	int ret = gp_abilities_list_load_dir(ptr, dir, context);
 	gp_error_check(ret, "Failed to load camera abilities list from directory.");
 }
+void camera_abilities_list::reset()
+{
+	int ret = gp_abilities_list_reset(ptr);
+	gp_error_check(ret, "Failed to reset camera abilities list");
+}
 
 void camera_abilities_list::detect(GPPortInfoList *info_list, CameraList *l, GPContext *context)
 {
@@ -53,4 +58,3 @@ void camera_abilities_list::get_abilities(int index, CameraAbilities *abilities)
 	int ret = gp_abilities_list_get_abilities(ptr, index, abilities);
 	gp_error_check(ret, "Failed to get camera abilities.");
 }
-

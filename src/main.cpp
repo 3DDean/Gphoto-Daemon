@@ -354,7 +354,8 @@ int main(int argc, const char **argv)
 						instruction func("close_camera", &GPhoto::closeCamera);
 						func(config, gphoto, command, args);
 					}
-					else if (command == "capture_preview")
+
+					if (false && command == "capture_preview")
 					{
 						try
 						{

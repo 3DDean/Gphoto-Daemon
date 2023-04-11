@@ -60,16 +60,21 @@ gphoto_port_info::operator GPPortInfo&()
 gphoto_port_info_list::gphoto_port_info_list()
 	: ptr(nullptr)
 {
-	gp_error_check(gp_port_info_list_new(&ptr), "Failed to create port info list");
 }
 
 gphoto_port_info_list::~gphoto_port_info_list()
 {
-	gp_error_check(gp_port_info_list_free(ptr), "Failed to free port info list");
+	if(ptr)
+		gp_error_check(gp_port_info_list_free(ptr), "Failed to free port info list");
 }
 
 void gphoto_port_info_list::load()
 {
+	if(ptr != nullptr)
+		gp_error_check(gp_port_info_list_free(ptr), "Failed to free port info list");
+	
+	gp_error_check(gp_port_info_list_new(&ptr), "Failed to create port info list");
+
 	gp_error_check(gp_port_info_list_load(ptr), "Failed to load port info list");
 }
 

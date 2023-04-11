@@ -80,9 +80,7 @@ GPhoto::GPhoto()
 	// gp_context_set_cancel_func(context, cancel_func, nullptr);
 	// gp_context_set_progress_funcs(context, progress_start_func, progress_update_func, progress_stop_func, nullptr);
 	
-	port_list.load();
 	abilities.load(context);
-	detectCameras();
 }
 
 GPhoto::~GPhoto()
@@ -91,9 +89,12 @@ GPhoto::~GPhoto()
 }
 
 // This detects cameras
-void GPhoto::detectCameras()
+int GPhoto::detectCameras()
 {
+	port_list.load();
+
 	abilities.detect(port_list, cameraList, context);;
+	return cameraList.count();
 }
 
 int GPhoto::openCamera(int index)
@@ -127,7 +128,7 @@ int GPhoto::openCamera(int index)
 	}
 	else
 	{
-		throw std::logic_error("No camera's detected.");
+		throw std::logic_error("No cameras detected to load.");
 	}
 	return cameraIndex;
 }
