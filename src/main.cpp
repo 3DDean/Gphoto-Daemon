@@ -309,7 +309,7 @@ int main(int argc, const char **argv)
 
 	StatusFile application_status(config.get_status_file_path(), "log.txt");
 
-	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_NONBLOCK);
+	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_RDONLY);
 
 	// TODO Set up response que
 	// TODO Update values file when camera config options are updated
@@ -320,6 +320,11 @@ int main(int argc, const char **argv)
 
 	int capture_count = 0;
 	int preview_count = 0;
+
+	instruction_set gphoto_commands(
+		instruction("detect_camera", &GPhoto::detectCameras),
+		instruction("open_camera", &GPhoto::openCamera),
+		instruction("close_camera", &GPhoto::closeCamera));
 
 	while (running)
 	{
@@ -339,23 +344,15 @@ int main(int argc, const char **argv)
 						if (!arg.to_view().empty())
 							args.emplace_back(arg);
 
-					if (command == "detect_camera")
+					if (!gphoto_commands.parse_command(config, command, args, gphoto))
 					{
-						instruction func("detect_camera", &GPhoto::detectCameras);
-						func(config, gphoto, command, args);
-					}
-					else if (command == "open_camera")
-					{
-						instruction func("open_camera", &GPhoto::openCamera);
-						func(config, gphoto, command, args);
-					}
-					else if (command == "close_camera")
-					{
-						instruction func("close_camera", &GPhoto::closeCamera);
-						func(config, gphoto, command, args);
+						//TODO output this to status file
+						std::cout << "Unknown Command\n";
 					}
 
-					if (false && command == "capture_preview")
+#if(false)
+
+					if (command == "capture_preview")
 					{
 						try
 						{
@@ -438,6 +435,7 @@ int main(int argc, const char **argv)
 
 						// TODO inform the instruction pipe that this data has been consumed and can be written over if need be
 					}
+#endif
 					pipeData.consume(match.end());
 				}
 				// TODO Command parsing

@@ -1,10 +1,10 @@
 #pragma once
 #include "fixed_array.h"
 #include "status.h"
+#include "tuple.h"
 #include "utility.h"
 #include <functional>
 #include <sstream>
-#include <tuple.h>
 
 // TODO implement string_conversion error
 template <typename T>
@@ -44,40 +44,47 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 	using funcT = ReturnT (ParentT::*)(ArgsT...);
 
 	constexpr instruction(const char *command_name, funcT &&func)
-		: name(command_name), func(func) {}
+		: name_str(command_name), func(func) {}
 
-	bool operator()(daemon_config& config, ParentT &parent, std::string_view& command, std::vector<std::string_view> &args)
+	inline bool operator()(daemon_config &config, std::vector<std::string_view> &args, ParentT &parent)
 	{
-		if (command == name)
+		if (args.size() == sizeof...(ArgsT))
 		{
-			if (args.size() == sizeof...(ArgsT))
+			state_object status_output = config.get_status_object(name_str);
+			try
 			{
-				state_object status_output = config.get_status_object(name);
-				try
+				if constexpr (std::is_same_v<void, ReturnT>)
 				{
-					if constexpr (std::is_same_v<void, ReturnT>)
-					{
-						call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{});
-					}
-					else
-					{
-						status_output.append_result(call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{}));
-					}
-					return true;
+					call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{});
 				}
-				catch (std::exception &e)
+				else
 				{
-					status_output.set_result("Error", e.what());
-					return false;
+					status_output.append_result(call_func(parent, args, std::make_index_sequence<sizeof...(ArgsT)>{}));
 				}
+				return true;
+			}
+			catch (std::exception &e)
+			{
+				status_output.set_result("Error", e.what());
+				return false;
 			}
 		}
+
 		return false;
+	}
+
+	constexpr std::size_t arg_count() const noexcept
+	{
+		return sizeof...(ArgsT);
+	}
+	const std::string_view name() const noexcept
+	{
+		return name_str;
 	}
 
   private:
 	const std::function<ReturnT(ParentT &, ArgsT...)> func;
-	const std::string_view name;
+	const std::string_view name_str;
 
 	template <typename IndexT, IndexT... Indices>
 	auto convert_args(std::vector<std::string_view> &args, std::integer_sequence<IndexT, Indices...>)
@@ -90,4 +97,34 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 	{
 		return func(parent, (from_string<ArgsT>{}(args[Indices]))...);
 	}
+};
+
+template <typename... Instructions>
+struct instruction_set
+{
+	instruction_set(Instructions &&...commands)
+		: instructions(commands...)
+	{
+	}
+
+	template <typename... ArgsT>
+	bool parse_command(daemon_config &config,
+					   std::string_view &command,
+					   std::vector<std::string_view> &cmdArgs,
+					   ArgsT &&...args)
+	{
+		auto command_comparator = [command](auto &&element)
+		{
+			return command == element.name();
+		};
+		auto command_executor = [&config, &cmdArgs, &args...](auto &&element)
+		{
+			element(config, cmdArgs, args...);
+		};
+
+		return tuple_switch(command_comparator, command_executor, instructions);
+	}
+
+  private:
+	std::tuple<Instructions...> instructions;
 };
