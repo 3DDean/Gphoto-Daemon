@@ -46,7 +46,7 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 	constexpr instruction(const char *command_name, funcT &&func)
 		: name_str(command_name), func(func) {}
 
-	inline bool operator()(daemon_config &config, std::vector<std::string_view> &args, ParentT &parent)
+	inline bool operator()(status_manager &config, std::vector<std::string_view> &args, ParentT &parent)
 	{
 		if (args.size() == sizeof...(ArgsT))
 		{
@@ -108,7 +108,7 @@ struct instruction_set
 	}
 
 	template <typename... ArgsT>
-	bool parse_command(daemon_config &config,
+	bool parse_command(status_manager &config,
 					   std::string_view &command,
 					   std::vector<std::string_view> &cmdArgs,
 					   ArgsT &&...args)

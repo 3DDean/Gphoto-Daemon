@@ -2,13 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "command_pipe.h"
 #include "daemon_config.h"
 #include "gphoto-widget.h"
 #include "gphoto.h"
 #include "named_pipe.h"
-#include <gphoto2/gphoto2-camera.h>
-
 #include <fstream>
+#include <gphoto2/gphoto2-camera.h>
 #include <iostream>
 #include <signal.h>
 #include <string>
@@ -276,9 +276,6 @@ cli_args process_args(int argc, const char **argv)
 	exit(-2);
 }
 
-struct command_parser
-{
-};
 
 int main(int argc, const char **argv)
 {
@@ -303,19 +300,6 @@ int main(int argc, const char **argv)
 
 	GPhoto gphoto;
 
-	CameraObj activeCamera;
-
-	using stack_allocated_buffer = stack_buffer<512>;
-
-	StatusFile application_status(config.get_status_file_path(), "log.txt");
-
-	read_pipe<stack_allocated_buffer> instruction_pipe(config.get_pipe_file_path(), O_RDONLY);
-
-	// TODO Set up response que
-	// TODO Update values file when camera config options are updated
-	// TODO Fix radio buttons
-	application_status.set_state();
-
 	timelapse_manager timelapseManager(config);
 
 	int capture_count = 0;
@@ -326,31 +310,22 @@ int main(int argc, const char **argv)
 		instruction("open_camera", &GPhoto::openCamera),
 		instruction("close_camera", &GPhoto::closeCamera));
 
+	command_pipe gphoto_pipe(
+		instruction_set(
+			instruction("detect_camera", &GPhoto::detectCameras),
+			instruction("open_camera", &GPhoto::openCamera),
+			instruction("close_camera", &GPhoto::closeCamera)),
+			config.get_pipe_file_path(),
+			config.get_status_file_path(),
+			"log.txt"
+	);
+
 	while (running)
 	{
 		// sigsuspend(&continueMask);
-		for (auto pipeData : instruction_pipe)
-		{
-			for (auto match : ctre::split<"\n">(instruction_pipe.get_string_view()))
-			{
-				std::string_view matchingStr = match;
-				if (auto [match2, commandResult, valueResult] = ctre::match<"(\\w+)\\s*(.+)?">(matchingStr); match2)
-				{
-					std::string_view command((std::string_view)commandResult);
-					std::string value((std::string_view)valueResult);
+		gphoto_pipe.parse_commands(gphoto);
 
-					std::vector<std::string_view> args;
-					for (auto arg : ctre::split<"(?<!\") (?!\")">(value))
-						if (!arg.to_view().empty())
-							args.emplace_back(arg);
-
-					if (!gphoto_commands.parse_command(config, command, args, gphoto))
-					{
-						//TODO output this to status file
-						std::cout << "Unknown Command\n";
-					}
-
-#if(false)
+#if (false)
 
 					if (command == "capture_preview")
 					{
@@ -436,14 +411,6 @@ int main(int argc, const char **argv)
 						// TODO inform the instruction pipe that this data has been consumed and can be written over if need be
 					}
 #endif
-					pipeData.consume(match.end());
-				}
-				// TODO Command parsing
-
-				std::cout << matchingStr << "\n";
-			}
-		}
-		instruction_pipe.clear();
 		std::chrono::microseconds delayTime(10000);
 		millisecond_duration delayDuration(delayTime);
 		std::this_thread::sleep_for(delayDuration);

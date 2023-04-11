@@ -66,6 +66,21 @@ struct state_object
 	std::ostringstream result;
 };
 
+struct status_manager
+{
+	status_manager(std::string_view status_path)
+		: status_path(status_path)
+	{
+	}
+	inline auto get_status_object(std::string_view command_name)
+	{
+		return state_object(status_path, command_name);
+	}
+
+  private:
+	std::string status_path;
+};
+
 struct StatusFile
 {
 	StatusFile(std::string_view status_filepath, std::string_view logpath)
