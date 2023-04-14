@@ -12,18 +12,16 @@ class gphoto_file
 {
   public:
 	gphoto_file();
+	gphoto_file(const gphoto_file& copyTarget);
+	gphoto_file(gphoto_file&& moveTarget);
+
 	gphoto_file(const int fd);
 	gphoto_file(const int dirfd, std::string_view filename);
-	gphoto_file(std::string_view filename);
 	gphoto_file(CameraFileHandler *handler, void *priv);
 
 	~gphoto_file();
 
-	gphoto_file(const gphoto_file &other);
-
 	gphoto_file &operator=(const gphoto_file &other);
-
-	void unref();
 
 	void set_name(std::string_view name);
 	std::string_view get_name() const;

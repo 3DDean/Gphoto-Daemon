@@ -22,6 +22,12 @@ struct file_access_exception : public std::exception
 	std::string message;
 };
 
+/* Interface improvements 
+	state_object current_state;
+	current_state = executing_state;
+	
+*/
+
 struct state_object
 {
 	state_object(std::string_view status_path, std::string_view command)
@@ -55,9 +61,15 @@ struct state_object
 		result << state << " " << command << "\n";
 		result << arg;
 	}
-	void append_result(auto str)
+	void append_result(auto data)
 	{
-		result << str;
+		result << data;
+	}
+	
+	template<typename FirstT, typename SecondT>
+	void append_result(std::pair<FirstT, SecondT> data)
+	{
+		result << data.first << "\n" << data.second << "\n";
 	}
 
   private:

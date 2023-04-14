@@ -46,9 +46,9 @@ int camera_abilities_list::count()
 	return list_count;
 }
 
-int camera_abilities_list::lookup_model(const char *model)
+int camera_abilities_list::lookup_model(std::string_view model)
 {
-	int modelIndex = gp_abilities_list_lookup_model(ptr, model);
+	int modelIndex = gp_abilities_list_lookup_model(ptr, model.data());
 	gp_error_check(modelIndex, "Failed to lookup camera model");
 	return modelIndex;
 }

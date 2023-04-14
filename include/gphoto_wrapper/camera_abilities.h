@@ -1,5 +1,6 @@
 #pragma once
 #include <gphoto2/gphoto2-abilities-list.h>
+#include <string_view>
 
 class camera_abilities_list
 {
@@ -12,7 +13,7 @@ class camera_abilities_list
 	void detect(GPPortInfoList *info_list, CameraList *l, GPContext *context);
 	void append(CameraAbilities abilities);
 	int count();
-	int lookup_model(const char *model);
+	int lookup_model(std::string_view model);
 	void get_abilities(int index, CameraAbilities *abilities);
 
   private:

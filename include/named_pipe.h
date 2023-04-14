@@ -76,11 +76,11 @@ struct read_pipe : public named_pipe
 {
 	// using named_pipe::fd;
 	read_pipe(const char *filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+		: named_pipe(filePath, O_RDONLY | open_flags){};
 	read_pipe(const std::string filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+		: named_pipe(filePath, O_RDONLY | open_flags){};
 	read_pipe(const std::filesystem::path filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | O_NONBLOCK){};
+		: named_pipe(filePath, O_RDONLY | open_flags){};
 
 	struct buffer_data
 	{

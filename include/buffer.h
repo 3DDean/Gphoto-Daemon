@@ -59,9 +59,9 @@ struct stack_buffer
 		else if (amount < size)
 		{
 			auto dataStart = data + amount;
-			auto remainingData = size - amount;
+			size -= amount;
 
-			memcpy(data, dataStart, remainingData);
+			memcpy(data, dataStart, size);
 		}
 		else
 		{

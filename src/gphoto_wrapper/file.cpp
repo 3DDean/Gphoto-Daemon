@@ -9,6 +9,17 @@ gphoto_file::gphoto_file()
 		gp_file_new(&ptr),
 		"Failed to create CameraFile");
 }
+gphoto_file::gphoto_file(const gphoto_file &copyTarget)
+	: ptr(copyTarget.ptr)
+{
+	gp_file_ref(copyTarget.ptr);
+}
+
+gphoto_file::gphoto_file(gphoto_file &&moveTarget)
+	: ptr(moveTarget.ptr)
+{
+	moveTarget.ptr = nullptr;
+}
 
 gphoto_file::gphoto_file(const int fd)
 	: ptr(nullptr)
@@ -20,9 +31,11 @@ gphoto_file::gphoto_file(const int fd)
 
 gphoto_file::gphoto_file(const int dirfd, std::string_view filename)
 	: ptr(nullptr)
-
 {
 	int fd = openat(dirfd, filename.data(), O_CREAT | O_TRUNC, O_RDWR);
+	gp_error_check(
+		gp_file_new_from_fd(&ptr, fd),
+		"Failed to create CameraFile from fd");
 }
 
 gphoto_file::gphoto_file(CameraFileHandler *handler, void *priv)
@@ -35,18 +48,12 @@ gphoto_file::gphoto_file(CameraFileHandler *handler, void *priv)
 
 gphoto_file::~gphoto_file()
 {
-	gp_error_check(
-		gp_file_unref(ptr),
-		"Failed to free CameraFile");
-}
-
-// Copy constructor and assignment operator
-gphoto_file::gphoto_file(const gphoto_file &other)
-	: ptr(other.ptr)
-{
-	gp_error_check(
-		gp_file_ref(other.ptr),
-		"Failed to ref CameraFile");
+	if (ptr != nullptr)
+	{
+		gp_error_check(
+			gp_file_unref(ptr),
+			"Failed to free CameraFile");
+	}
 }
 
 gphoto_file &gphoto_file::operator=(const gphoto_file &other)
@@ -62,12 +69,6 @@ gphoto_file &gphoto_file::operator=(const gphoto_file &other)
 			"Failed to ref other CameraFile");
 	}
 	return *this;
-}
-
-void gphoto_file::unref()
-{
-	gp_file_unref(ptr);
-	ptr = nullptr;
 }
 
 // Setters and getters
