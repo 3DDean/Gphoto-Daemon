@@ -1,9 +1,9 @@
 #pragma once
+#include "instruction.h"
 #include "named_pipe.h"
 #include "status.h"
 #include <ctre.hpp>
 #include <vector>
-
 struct logger
 {
 	logger(std::string_view log_path)
@@ -14,7 +14,7 @@ struct logger
 	std::string log_path;
 };
 
-//TODO Add config loading
+// TODO Add config loading
 template <typename InstructionSet>
 struct command_pipe
 {
@@ -33,6 +33,17 @@ struct command_pipe
 		  instruction_pipe(pipe_path),
 		  statusManager(status_path),
 		  log(log_path)
+	{
+	}
+
+	command_pipe(
+		InstructionSet instructions,
+		std::string_view name,
+		std::string_view dir)
+		: instructions(instructions),
+		  instruction_pipe(std::string(dir) + name.data() + ".pipe"),
+		  statusManager(std::string(dir) + name.data() + ".status"),
+		  log(std::string(dir) + name.data() + ".log")
 	{
 	}
 
