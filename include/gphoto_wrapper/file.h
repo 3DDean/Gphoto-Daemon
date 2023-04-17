@@ -1,4 +1,6 @@
 #pragma once
+#include "gphoto_wrapper/common.h"
+
 #include "gphoto-error.h"
 #include "gphoto2/gphoto2-file.h"
 
@@ -12,8 +14,7 @@ class gphoto_file
 {
   public:
 	gphoto_file();
-	gphoto_file(const gphoto_file& copyTarget);
-	gphoto_file(gphoto_file&& moveTarget);
+	GPHOTO_WRAPPER_COPY_AND_MOVE_CONSTRUCTOR(gphoto_file, gp_file_ref);
 
 	gphoto_file(const int fd);
 	gphoto_file(const int dirfd, std::string_view filename);

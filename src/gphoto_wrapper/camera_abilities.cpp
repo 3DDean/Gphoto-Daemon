@@ -1,13 +1,15 @@
 #include "gphoto_wrapper/camera_abilities.h"
 #include "gphoto-error.h"
-camera_abilities_list::camera_abilities_list()
+
+camera_abilities_list::camera_abilities_list() : ptr(nullptr)
 {
 	gp_abilities_list_new(&ptr);
 }
 
 camera_abilities_list::~camera_abilities_list()
 {
-	gp_abilities_list_free(ptr);
+	if(ptr != nullptr)
+		gp_abilities_list_free(ptr);
 }
 
 void camera_abilities_list::load(GPContext *context)

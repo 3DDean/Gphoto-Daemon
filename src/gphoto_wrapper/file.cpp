@@ -9,17 +9,6 @@ gphoto_file::gphoto_file()
 		gp_file_new(&ptr),
 		"Failed to create CameraFile");
 }
-gphoto_file::gphoto_file(const gphoto_file &copyTarget)
-	: ptr(copyTarget.ptr)
-{
-	gp_file_ref(copyTarget.ptr);
-}
-
-gphoto_file::gphoto_file(gphoto_file &&moveTarget)
-	: ptr(moveTarget.ptr)
-{
-	moveTarget.ptr = nullptr;
-}
 
 gphoto_file::gphoto_file(const int fd)
 	: ptr(nullptr)

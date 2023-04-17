@@ -1,5 +1,5 @@
 #pragma once
-
+#include "gphoto_wrapper/common.h"
 #include <gphoto2/gphoto2-port.h>
 #include <string>
 
@@ -29,6 +29,7 @@ class gphoto_port_info_list
 {
   public:
 	gphoto_port_info_list();
+	GPHOTO_WRAPPER_MOVE_CONSTRUCTOR(gphoto_port_info_list);
 	~gphoto_port_info_list();
 
 	void load();
