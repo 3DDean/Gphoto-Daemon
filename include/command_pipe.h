@@ -1,9 +1,9 @@
 #pragma once
-#include "instruction.h"
 #include "named_pipe.h"
 #include "status.h"
 #include <ctre.hpp>
 #include <vector>
+
 struct logger
 {
 	logger(std::string_view log_path)
@@ -29,7 +29,7 @@ struct command_pipe
 		std::string_view pipe_path,
 		std::string_view status_path,
 		std::string_view log_path)
-		: instructions(instructions),
+		: instructions(std::move(instructions)),
 		  instruction_pipe(pipe_path),
 		  statusManager(status_path),
 		  log(log_path)
@@ -40,7 +40,7 @@ struct command_pipe
 		InstructionSet instructions,
 		std::string_view name,
 		std::string_view dir)
-		: instructions(instructions),
+		: instructions(std::move(instructions)),
 		  instruction_pipe(std::string(dir) + name.data() + ".pipe"),
 		  statusManager(std::string(dir) + name.data() + ".status"),
 		  log(std::string(dir) + name.data() + ".log")
@@ -62,14 +62,16 @@ struct command_pipe
 					std::string value((std::string_view)valueResult);
 
 					std::vector<std::string_view> cmd_args;
+					
+					//The look arounds are to avoid spliting strings
 					for (auto arg : ctre::split<"(?<!\") (?!\")">(value))
 						if (!arg.to_view().empty())
 							cmd_args.emplace_back(arg);
 
 					if (!instructions.parse_command(statusManager, command, cmd_args, args...))
 					{
-						// TODO output this to status file
-						std::cout << "Unknown Command\n";
+						std::string_view match_str = match2;
+						statusManager.error(std::string("command not find ") + match_str.data());
 					}
 
 					pipeData.consume(match.end());

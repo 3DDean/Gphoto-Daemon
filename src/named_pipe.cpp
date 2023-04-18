@@ -18,6 +18,18 @@ named_pipe::named_pipe(const char *filepath, const int open_mode)
 	pipe_fd = open(filepath, open_mode);
 	if (pipe_fd == -1)
 		throw std::runtime_error(std::string("Could not open fifo: ") + strerror(errno));
+
+	int ret = fcntl(pipe_fd, F_SETOWN, getpid());
+	if( ret < 0)
+		throw std::runtime_error("fcntl set ownder failed");
+
+	int flags = fcntl(pipe_fd, F_GETFL);
+	if (flags == -1)
+		throw std::runtime_error("Failed to get file descriptor flags");
+
+	flags |= O_ASYNC;
+	if (fcntl(pipe_fd, F_SETFL, flags) == -1)
+		throw std::runtime_error("Failed to set O_ASYNC flag");
 }
 
 named_pipe::named_pipe(const std::string filePath, const int open_mode)

@@ -1,12 +1,13 @@
 #pragma once
 #include "buffer.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <string.h>
 #include <string>
 #include <unistd.h>
-#include <errno.h>
+
 template <std::size_t Size>
 struct pipe_buffer
 {
@@ -76,31 +77,32 @@ struct read_pipe : public named_pipe
 {
 	// using named_pipe::fd;
 	read_pipe(const char *filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | open_flags){};
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
 	read_pipe(const std::string filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | open_flags){};
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
 	read_pipe(const std::filesystem::path filePath, const int open_flags = 0)
-		: named_pipe(filePath, O_RDONLY | open_flags){};
+		: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
 
 	struct buffer_data
 	{
 		buffer_data(BufferT &buf)
 			: buffer(buf), usedAmount(0) {}
 
-		~buffer_data(){
+		~buffer_data()
+		{
 			buffer.consume(usedAmount);
 		}
 		operator std::string_view()
 		{
 			return (std::string_view)buffer;
 		}
-		void consume(const char* readEnd)
+		void consume(const char *readEnd)
 		{
 			usedAmount = readEnd - buffer.data;
 		}
 
 	  private:
-	  	int usedAmount;
+		int usedAmount;
 		BufferT &buffer;
 	};
 
@@ -160,7 +162,7 @@ struct read_pipe : public named_pipe
 		auto pipe_reader = [fd](void *ptr, std::size_t size)
 		{
 			auto amountRead = ::read(fd, ptr, size);
-			if(amountRead == -1)
+			if (amountRead == -1)
 			{
 				auto errvalue = errno;
 				std::cout << strerror(errvalue) << "\n";

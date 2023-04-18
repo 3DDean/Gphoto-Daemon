@@ -1,10 +1,47 @@
 #include "gphoto_wrapper/camera.h"
 
 CameraObj::CameraObj()
-	: cameraPath("/"),
-	  context(nullptr),
-	  ptr(nullptr)
+	: context(nullptr),
+	  ptr(nullptr),
+	  capture_count(0),
+	  preview_count(0)
 {}
+
+CameraObj::CameraObj(GPContext *contextPtr,
+					 CameraAbilities abilities,
+					 gphoto_port_info &info,
+					 std::string_view nameStr,
+					 std::string_view port,
+					 std::filesystem::path image_dir)
+	: image_path(image_dir),
+	  name(nameStr),
+	  port(port),
+	  context(contextPtr),
+	  ptr(nullptr),
+	  capture_count(0),
+	  preview_count(0)
+{
+	context = contextPtr;
+	gp_error_check(gp_camera_new(&ptr), "Failed to create new camera");
+	set_abilities(abilities);
+	set_port_info(info);
+	gp_error_check(gp_camera_init(ptr, context), "Failed to init camera device");
+
+	name = nameStr;
+	// gp_camera_exit(ptr, context);
+}
+
+CameraObj::CameraObj(CameraObj &&copyTarget)
+	: context(copyTarget.context),
+	  ptr(copyTarget.ptr),
+	  name(copyTarget.name),
+	  image_path(copyTarget.image_path),
+	  capture_count(copyTarget.capture_count),
+	  preview_count(copyTarget.preview_count)
+{
+	copyTarget.ptr = nullptr;
+	copyTarget.context = nullptr;
+}
 
 CameraObj::~CameraObj()
 {
@@ -15,11 +52,14 @@ CameraObj::~CameraObj()
 	}
 }
 
-void CameraObj::init(GPContext *contextPtr, std::string_view nameStr)
+void CameraObj::init(GPContext *contextPtr, std::string_view nameStr, std::filesystem::path camera_dir)
 {
 	context = contextPtr;
 	gp_error_check(gp_camera_new(&ptr), "Failed to create new camera");
-	gp_error_check(gp_camera_init(ptr, context),  "Failed to init camera device");
+	gp_error_check(gp_camera_init(ptr, context), "Failed to init camera device");
+
+	image_path = camera_dir;
+
 	name = nameStr;
 }
 
@@ -106,7 +146,7 @@ int CameraObj::triggerCapture()
 }
 
 // This currently returns early as the noises my camera makes scares my dog, so testing file handling is a bit difficult atm
-gphoto_file CameraObj::capture()
+gphoto_file CameraObj::capture_image()
 {
 	// std::string time = get_time();
 
@@ -119,17 +159,6 @@ gphoto_file CameraObj::capture()
 	return get_file(&filePath, context, GP_FILE_TYPE_NORMAL);
 }
 
-gphoto_file CameraObj::capture_preview()
-{
-	int ret;
-	gphoto_file file;
-
-	waitForEvent(10);
-
-	gp_error_check(gp_camera_capture_preview(ptr, file, context), "Could not capture preview.\n");
-
-	return file;
-}
 // TODO Determine if there is a memory leak here
 int CameraObj::waitForEvent(int timeout)
 {
@@ -217,7 +246,7 @@ void CameraObj::set_abilities(CameraAbilities abilities)
 	gp_error_check(ret, "Failed to set camera abilities");
 }
 
-void CameraObj::set_port_info(gphoto_port_info& info)
+void CameraObj::set_port_info(gphoto_port_info &info)
 {
 	int ret = gp_camera_set_port_info(ptr, info);
 	gp_error_check(ret, "Failed to set port info");
@@ -227,4 +256,125 @@ void CameraObj::set_port_speed(int speed)
 {
 	int ret = gp_camera_set_port_speed(ptr, speed);
 	gp_error_check(ret, "Failed to set port speed");
+}
+
+std::string CameraObj::capture_preview()
+{
+	int ret;
+	gphoto_file preview_capture;
+
+	waitForEvent(10);
+
+	gp_error_check(gp_camera_capture_preview(ptr, preview_capture, context), "Could not capture preview.\n");
+
+	std::filesystem::path captureName = image_path;
+	captureName /= "preview";
+	captureName += std::to_string(preview_count) += ".jpg";
+
+	preview_capture.save(captureName.c_str());
+
+	++preview_count;
+}
+
+// The functional difference between capture and timelapse is that
+// saves the image before taking another image
+std::string CameraObj::capture(int delay, int count)
+{
+	gphoto_file last_capture = capture_image();
+	std::filesystem::path capture_path = image_path;
+	capture_path /= "image";
+	capture_path += std::to_string(capture_count) += ".jpg";
+
+	++capture_count;
+	last_capture.save(capture_path.c_str());
+	return capture_path.string();
+}
+
+bool CameraObj::toggle_timelapse(int delay, int count)
+{
+}
+
+void CameraObj::process_command(status_manager &config,
+					 std::string_view &command,
+					 std::vector<std::string_view> &cmdArgs)
+{
+	instruction_set commands(
+		instruction("capture", &CameraObj::capture),
+		instruction("capture_preview", &CameraObj::capture_preview),
+		instruction("toggle_timelapse", &CameraObj::toggle_timelapse),
+		instruction("setting_config", &CameraObj::set_config_value));
+
+	commands.parse_command(config, command, cmdArgs, *this);
+}
+
+void timelapse_manager::start(CameraObj &activeCamera, int delayMs, std::string_view timelapse_directory)
+{
+	// auto containsIllegalTokens = ctre::search<"/">(timelapse_directory);
+
+	// if (delayMs > 0 && thread_state != state::running && !containsIllegalTokens)
+	// {
+	// 	filepath = config.image_dir;
+	// 	filepath += "/";
+	// 	// No specified directory so use current time instead
+	// 	if (timelapse_directory.empty())
+	// 		filepath += get_time("%H-%M");
+
+	// 	if (!std::filesystem::create_directory(filepath))
+	// 	{
+	// 		// I don't like accidentally overriding files, though I need to look into whether this includes special files
+	// 		capture_count = std::distance(std::filesystem::directory_iterator(filepath), std::filesystem::directory_iterator{});
+	// 	}
+	// 	filepath += "/";
+	// 	delay = delayMs;
+	// 	do_run = true;
+	// 	thread_state = state::running;
+	// 	failed_capture_count = 0;
+	// 	failed_capture_max = 3;
+
+	// 	thread = std::thread(
+	// 		[&]()
+	// 		{
+	// 			std::chrono::microseconds delayTime(delayMs);
+	// 			millisecond_duration delayDuration(delayTime);
+
+	// 			while (do_run)
+	// 			{
+	// 				try
+	// 				{
+	// 					auto image = activeCamera.capture();
+	// 					std::string imagepath = filepath;
+
+	// 					imagepath += std::to_string(capture_count);
+	// 					capture_count++;
+	// 					imagepath += ".jpg";
+	// 					image.save(imagepath);
+	// 				}
+	// 				catch (GPhotoException &e)
+	// 				{
+	// 					if (failed_capture_count > failed_capture_max)
+	// 					{
+	// 						thread_state = state::error;
+	// 						return;
+	// 					}
+	// 					failed_capture_count++;
+	// 					// LOG CAPTURE ERROR
+	// 				}
+
+	// 				std::this_thread::sleep_for(delayDuration);
+	// 			}
+	// 			thread_state = state::stopped;
+	// 			return;
+	// 		});
+	// }
+}
+
+void timelapse_manager::stop()
+{
+	do_run = false;
+	thread.join();
+}
+
+bool timelapse_manager::is_running()
+{
+	return do_run;
 }

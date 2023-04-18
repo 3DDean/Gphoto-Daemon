@@ -2,6 +2,7 @@
 #include "gphoto-error.h"
 #include <chrono>
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -18,7 +19,6 @@ int sample_autodetect(CameraList *list, GPContext *context)
 	gp_list_reset(list);
 	return gp_camera_autodetect(list, context);
 }
-
 
 void error_func(GPContext *context, const char *text, void *data)
 {
@@ -68,7 +68,8 @@ void status_func(GPContext *context, const char *text, void *data)
 // 	std::cout << "Progress stop function called for id " << id << "\n";
 // }
 
-GPhoto::GPhoto()
+GPhoto::GPhoto(daemon_config &config)
+	: config(config)
 {
 	context = gp_context_new();
 	// Set the functions on the context
@@ -79,13 +80,28 @@ GPhoto::GPhoto()
 	// gp_context_set_question_func(context, question_func, nullptr);
 	// gp_context_set_cancel_func(context, cancel_func, nullptr);
 	// gp_context_set_progress_funcs(context, progress_start_func, progress_update_func, progress_stop_func, nullptr);
-	
+
 	abilities.load(context);
+}
+GPhoto::GPhoto(GPhoto &&move)
+	: config(move.config),
+	  context(std::move(move.context)),
+	  cameraList(std::move(move.cameraList)),
+	  port_list(std::move(move.port_list)),
+	  abilities(std::move(move.abilities)),
+	  loadedCameras(std::move(move.loadedCameras))
+{
+	move.context = nullptr;
 }
 
 GPhoto::~GPhoto()
 {
-	gp_context_unref(context);
+	for (auto [hash, camera] : loadedCameras)
+	{
+		delete camera;
+	}
+	if (context != nullptr)
+		gp_context_unref(context);
 }
 
 // This detects cameras
@@ -93,46 +109,92 @@ int GPhoto::detectCameras()
 {
 	port_list.load();
 
-	abilities.detect(port_list, cameraList, context);;
+	abilities.detect(port_list, cameraList, context);
+
+	std::cout << cameraList.count() << "\n";
 	return cameraList.count();
 }
 
-int GPhoto::openCamera(int index)
+std::string GPhoto::openCamera(int index)
 {
 	int ret, modelDescriptor, portDescriptor;
 	CameraAbilities camAbilities;
 	int cameraIndex = loadedCameras.size();
-	auto camera = loadedCameras.emplace_back();
 
+	// TODO add a life check
 	if (index < cameraCount())
 	{
 		CameraListEntry cameraEntry(cameraList, index);
-		const char *nameStr = cameraEntry.name;
+		std::string_view nameStr = cameraEntry.name;
+		std::string_view camera_port = cameraEntry.value;
+		std::size_t cameraHash = std::hash<std::string_view>{}(nameStr);
 
-		fprintf(stderr, "name is %s\n", nameStr);
+		// TODO Collision Resolution
+		if (loadedCameras.count(nameStr.data()) == 0)
+		{
+			modelDescriptor = abilities.lookup_model(nameStr);
+			/* First lookup the model / driver */
 
-		modelDescriptor = abilities.lookup_model(nameStr);
-		/* First lookup the model / driver */
+			abilities.get_abilities(modelDescriptor, &camAbilities);
 
-		abilities.get_abilities(modelDescriptor, &camAbilities);
+			/* Then associate the camera with the specified port */
+			portDescriptor = port_list.lookup_path(port);
 
-		/* Then associate the camera with the specified port */
-		portDescriptor = port_list.lookup_path(port);
+			auto port_info = port_list.getPortInfoListInfo(portDescriptor);
 
-		auto port_info = port_list.getPortInfoListInfo(portDescriptor);
+			std::filesystem::path camera_path = config.camera_dir;
+			camera_path /= "camera" + std::to_string(cameraIndex);
 
-		camera.init(context, nameStr);
-		camera.set_abilities(camAbilities);
+			std::filesystem::create_directories(camera_path);
+			loadedCameras.emplace(nameStr, new CameraObj(context, camAbilities, port_info, nameStr, camera_port, camera_path));
+			// TODO wrtie loaded cameras
+		}
+		else
+		{
+			// TODO Collision Resolution
+			std::cout << "Implement Collision data\n";
+		}
 
-		camera.set_port_info(port_info);
+		return nameStr.data();
 	}
 	else
 	{
 		throw std::logic_error("No cameras detected to load.");
 	}
-	return cameraIndex;
 }
-bool GPhoto::closeCamera(int index){}
+
+bool GPhoto::closeCamera(std::string cameraID)
+{
+	throw "Not yet implemented";
+}
+
+void GPhoto::process_camera_command(status_manager &config,
+									std::vector<std::string_view> &cmdArgs)
+{
+	std::string_view cmd = cmdArgs[0];
+	cmdArgs.erase(cmdArgs.begin());
+
+	if (loadedCameras.size())
+	{
+		if (ctre::match<"camera_all">(cmd))
+		{
+			for (auto [name, camera] : loadedCameras)
+				camera->process_command(config, cmd, cmdArgs);
+		}
+		else
+		{
+			auto it = loadedCameras.find(cmd.data());
+
+			// Check if the key was found
+			if (it != loadedCameras.end())
+				it->second->process_command(config, cmd, cmdArgs);
+			else
+				config.error(std::string("Could not find ") + cmd.data());
+		}
+	}
+	else
+		config.error(std::string("No camera's loaded"));
+}
 
 CameraPath::CameraPath(){};
 CameraPath::CameraPath(const char *folder, const char *name)

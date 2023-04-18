@@ -88,7 +88,12 @@ struct status_manager
 	{
 		return state_object(status_path, command_name);
 	}
-
+	
+	inline void error(std::string_view error)
+	{
+		std::ofstream status_file(status_path.data(), std::ios_base::trunc | std::ios_base::out);
+		status_file << "Error\n" << error;
+	}
   private:
 	std::string status_path;
 };

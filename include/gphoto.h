@@ -11,6 +11,7 @@
 #include <chrono>
 #include <gphoto2/gphoto2-camera.h>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <stack>
 #include <stdio.h>
@@ -38,26 +39,31 @@ struct CameraListEntry
 
 struct GPhoto
 {
-	GPhoto();
+	GPhoto(daemon_config &config);
+	GPhoto(GPhoto &&move);
 	~GPhoto();
 
-	int openCamera(int index);
-	bool closeCamera(int index);
+	std::string openCamera(int index);
+	bool closeCamera(std::string cameraID);
 	int detectCameras();
 
 	int cameraCount()
 	{
 		return cameraList.count();
 	}
+	void process_camera_command(status_manager &config,
+								std::vector<std::string_view> &cmdArgs);
 
   private:
 	const char *port = "usb:";
 
+	daemon_config &config;
 	GPContext *context;
 	gphoto_list cameraList;
+
 	gphoto_port_info_list port_list;
 	camera_abilities_list abilities;
-	std::vector<CameraObj> loadedCameras;
+	std::map<std::string, CameraObj *> loadedCameras;
 };
 
 struct FileData
