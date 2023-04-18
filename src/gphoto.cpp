@@ -171,29 +171,38 @@ bool GPhoto::closeCamera(std::string cameraID)
 void GPhoto::process_camera_command(status_manager &config,
 									std::vector<std::string_view> &cmdArgs)
 {
-	std::string_view cmd = cmdArgs[0];
-	cmdArgs.erase(cmdArgs.begin());
-
-	if (loadedCameras.size())
+	if (cmdArgs.size() > 2)
 	{
-		if (ctre::match<"camera_all">(cmd))
-		{
-			for (auto [name, camera] : loadedCameras)
-				camera->process_command(config, cmd, cmdArgs);
-		}
+		std::string_view camera = cmdArgs[0];
+		cmdArgs.erase(cmdArgs.begin());
+
+		std::string_view cmd = cmdArgs[0];
+		cmdArgs.erase(cmdArgs.begin());
+
+		if (loadedCameras.size() == 0)
+			config.error(std::string("No camera's loaded"));
 		else
 		{
-			auto it = loadedCameras.find(cmd.data());
-
-			// Check if the key was found
-			if (it != loadedCameras.end())
-				it->second->process_command(config, cmd, cmdArgs);
+			if (ctre::match<"camera_all">(cmd))
+			{
+				for (auto [name, camera] : loadedCameras)
+					camera->process_command(config, cmd, cmdArgs);
+			}
 			else
-				config.error(std::string("Could not find ") + cmd.data());
+			{
+				auto it = loadedCameras.find(cmd.data());
+
+				// Check if the key was found
+				if (it != loadedCameras.end())
+					it->second->process_command(config, cmd, cmdArgs);
+				else
+					config.error(std::string("Could not find ") + cmd.data());
+			}
 		}
 	}
 	else
-		config.error(std::string("No camera's loaded"));
+		config.error(std::string("Could not find "));
+
 }
 
 CameraPath::CameraPath(){};

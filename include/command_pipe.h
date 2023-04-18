@@ -62,11 +62,29 @@ struct command_pipe
 					std::string value((std::string_view)valueResult);
 
 					std::vector<std::string_view> cmd_args;
-					
-					//The look arounds are to avoid spliting strings
-					for (auto arg : ctre::split<"(?<!\") (?!\")">(value))
+					bool inside = false;
+
+					auto push_back = [&](auto& arg)
+					{
 						if (!arg.to_view().empty())
 							cmd_args.emplace_back(arg);
+					};
+
+					auto split_str= [&](auto& str_to_split)
+					{
+						for (auto arg : ctre::split<"(?<!\")[ ](?!\")">(str_to_split))
+							push_back(arg);
+					};
+
+					for (auto substr : ctre::split<"\"">(value))
+					{
+						if (inside)
+							push_back(substr);
+						else
+							split_str(substr);
+
+						inside = !inside;
+					}
 
 					if (!instructions.parse_command(statusManager, command, cmd_args, args...))
 					{
