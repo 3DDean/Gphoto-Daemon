@@ -9,7 +9,7 @@
 template <typename T>
 struct from_string
 {
-	T operator()(std::string_view arg){ throw "NOT YET IMPLEMENTED"; };
+	T operator()(std::string_view arg) { throw "NOT YET IMPLEMENTED"; };
 };
 
 template <>
@@ -70,6 +70,10 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 				return false;
 			}
 		}
+		else
+		{
+			config.error("Incorrect number of arguements");
+		}
 
 		return false;
 	}
@@ -106,34 +110,32 @@ struct instruction<ReturnT (ParentT::*)(ArgsT...)>
 };
 
 template <class ParentT, class ReturnT>
-struct instruction<ReturnT (ParentT::*)(status_manager&, std::vector<std::string_view>&)>
+struct instruction<ReturnT (ParentT::*)(status_manager &, std::vector<std::string_view> &)>
 {
-	using funcT = ReturnT (ParentT::*)(status_manager&, std::vector<std::string_view>&);
+	using funcT = ReturnT (ParentT::*)(status_manager &, std::vector<std::string_view> &);
 
 	constexpr instruction(const char *command_name, funcT &&func)
 		: name_str(command_name), func(func) {}
 
 	inline bool operator()(status_manager &config, std::vector<std::string_view> &args, ParentT &parent)
 	{
-			state_object status_output = config.get_status_object(name_str);
-			try
+		try
+		{
+			if constexpr (std::is_same_v<void, ReturnT>)
 			{
-				if constexpr (std::is_same_v<void, ReturnT>)
-				{
-					func(parent, config, args);
-				}
-				else
-				{
-					status_output.append_result(func(parent,config, args));
-				}
-				return true;
+				func(parent, config, args);
 			}
-			catch (std::exception &e)
+			else
 			{
-				status_output.set_result("Error", e.what());
-				return false;
+				func(parent, config, args);
 			}
-
+			return true;
+		}
+		catch (std::exception &e)
+		{
+			config.error(e.what());
+			return false;
+		}
 
 		return false;
 	}
@@ -148,7 +150,7 @@ struct instruction<ReturnT (ParentT::*)(status_manager&, std::vector<std::string
 	}
 
   private:
-	const std::function<ReturnT(ParentT &, status_manager&, std::vector<std::string_view>&)> func;
+	const std::function<ReturnT(ParentT &, status_manager &, std::vector<std::string_view> &)> func;
 	const std::string_view name_str;
 };
 

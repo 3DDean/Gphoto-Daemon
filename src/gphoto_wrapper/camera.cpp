@@ -274,6 +274,8 @@ std::string CameraObj::capture_preview()
 	preview_capture.save(captureName.c_str());
 
 	++preview_count;
+
+	return captureName.c_str();
 }
 
 // The functional difference between capture and timelapse is that

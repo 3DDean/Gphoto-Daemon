@@ -20,7 +20,7 @@ named_pipe::named_pipe(const char *filepath, const int open_mode)
 		throw std::runtime_error(std::string("Could not open fifo: ") + strerror(errno));
 
 	int ret = fcntl(pipe_fd, F_SETOWN, getpid());
-	if( ret < 0)
+	if (ret < 0)
 		throw std::runtime_error("fcntl set ownder failed");
 
 	int flags = fcntl(pipe_fd, F_GETFL);
@@ -43,4 +43,32 @@ named_pipe::named_pipe(const std::filesystem::path filePath, const int open_mode
 named_pipe::~named_pipe()
 {
 	close(pipe_fd);
+}
+
+read_pipe::read_pipe(const char *filePath, const int open_flags)
+	: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
+read_pipe::read_pipe(const std::string filePath, const int open_flags)
+	: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
+read_pipe::read_pipe(const std::filesystem::path filePath, const int open_flags)
+	: named_pipe(filePath, O_RDONLY | O_NONBLOCK | open_flags){};
+
+int read_pipe::required_bytes()
+{
+	int fd = named_pipe::pipe_fd;
+
+	int nbytes;
+	ioctl(fd, FIONREAD, &nbytes);
+	return nbytes;
+}
+
+int read_pipe::read_to(char *ptr, std::size_t size)
+{
+	int fd = named_pipe::pipe_fd;
+	auto amountRead = ::read(fd, ptr, size);
+	if (amountRead <= 0)
+	{
+		auto errvalue = errno;
+		std::cout << strerror(errvalue) << "\n";
+	}
+	return amountRead;
 }

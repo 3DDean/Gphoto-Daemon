@@ -171,9 +171,9 @@ bool GPhoto::closeCamera(std::string cameraID)
 void GPhoto::process_camera_command(status_manager &config,
 									std::vector<std::string_view> &cmdArgs)
 {
-	if (cmdArgs.size() > 2)
+	if (cmdArgs.size() >= 2)
 	{
-		std::string_view camera = cmdArgs[0];
+		std::string camera(cmdArgs[0]);
 		cmdArgs.erase(cmdArgs.begin());
 
 		std::string_view cmd = cmdArgs[0];
@@ -183,20 +183,15 @@ void GPhoto::process_camera_command(status_manager &config,
 			config.error(std::string("No camera's loaded"));
 		else
 		{
-			if (ctre::match<"camera_all">(cmd))
+			if (ctre::match<"camera_all">(camera))
 			{
 				for (auto [name, camera] : loadedCameras)
 					camera->process_command(config, cmd, cmdArgs);
 			}
 			else
 			{
-				auto it = loadedCameras.find(cmd.data());
-
-				// Check if the key was found
-				if (it != loadedCameras.end())
-					it->second->process_command(config, cmd, cmdArgs);
-				else
-					config.error(std::string("Could not find ") + cmd.data());
+				auto it = loadedCameras.at(camera.data());
+				it->process_command(config, cmd, cmdArgs);
 			}
 		}
 	}

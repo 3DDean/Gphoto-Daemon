@@ -3,7 +3,6 @@
 #include "status.h"
 #include <ctre.hpp>
 #include <vector>
-
 struct logger
 {
 	logger(std::string_view log_path)
@@ -18,23 +17,12 @@ struct logger
 template <typename InstructionSet>
 struct command_pipe
 {
-	using stack_allocated_buffer = stack_buffer<512>;
-	read_pipe<stack_allocated_buffer> instruction_pipe;
+	read_pipe instruction_pipe;
+	buffer buff;
+
 	InstructionSet instructions;
 	status_manager statusManager;
 	logger log;
-
-	command_pipe(
-		InstructionSet instructions,
-		std::string_view pipe_path,
-		std::string_view status_path,
-		std::string_view log_path)
-		: instructions(std::move(instructions)),
-		  instruction_pipe(pipe_path),
-		  statusManager(status_path),
-		  log(log_path)
-	{
-	}
 
 	command_pipe(
 		InstructionSet instructions,
@@ -44,62 +32,63 @@ struct command_pipe
 		  instruction_pipe(std::string(dir) + name.data() + ".pipe"),
 		  statusManager(std::string(dir) + name.data() + ".status"),
 		  log(std::string(dir) + name.data() + ".log")
-	{
-	}
+	{}
 
 	template <typename... ArgsT>
-	void parse_commands(ArgsT &&...args)
+	void process_commands(ArgsT &&...args)
 	{
-		// TODO investigate this weird interface, I don't think it needs to be quite this weird
-		for (auto pipeData : instruction_pipe)
+		auto [lock, data] = buff.read();
+
+		std::string_view command_str(data.begin(), data.size());
+
+		for (auto match : ctre::split<"\n">(command_str))
 		{
-			for (auto match : ctre::split<"\n">(instruction_pipe.get_string_view()))
+			std::string_view matchingStr = match;
+			if (auto [match2, commandResult, valueResult] = ctre::match<"(\\w+)\\s*(.+)?">(matchingStr); match2)
 			{
-				std::string_view matchingStr = match;
-				if (auto [match2, commandResult, valueResult] = ctre::match<"(\\w+)\\s*(.+)?">(matchingStr); match2)
+				std::string_view command((std::string_view)commandResult);
+				std::string value((std::string_view)valueResult);
+
+				std::vector<std::string_view> cmd_args;
+				bool inside = false;
+
+				auto push_back = [&](auto &arg)
 				{
-					std::string_view command((std::string_view)commandResult);
-					std::string value((std::string_view)valueResult);
+					if (!arg.to_view().empty())
+						cmd_args.emplace_back(arg);
+				};
 
-					std::vector<std::string_view> cmd_args;
-					bool inside = false;
+				auto split_str = [&](auto &str_to_split)
+				{
+					for (auto arg : ctre::split<"(?<!\")[ ](?!\")">(str_to_split))
+						push_back(arg);
+				};
 
-					auto push_back = [&](auto& arg)
-					{
-						if (!arg.to_view().empty())
-							cmd_args.emplace_back(arg);
-					};
+				for (auto substr : ctre::split<"\"">(value))
+				{
+					if (inside)
+						push_back(substr);
+					else
+						split_str(substr);
 
-					auto split_str= [&](auto& str_to_split)
-					{
-						for (auto arg : ctre::split<"(?<!\")[ ](?!\")">(str_to_split))
-							push_back(arg);
-					};
-
-					for (auto substr : ctre::split<"\"">(value))
-					{
-						if (inside)
-							push_back(substr);
-						else
-							split_str(substr);
-
-						inside = !inside;
-					}
-
-					if (!instructions.parse_command(statusManager, command, cmd_args, args...))
-					{
-						std::string_view match_str = match2;
-						statusManager.error(std::string("command not find ") + match_str.data());
-					}
-
-					pipeData.consume(match.end());
+					inside = !inside;
 				}
-				// TODO Command parsing
 
-				std::cout << matchingStr << "\n";
+				if (!instructions.parse_command(statusManager, command, cmd_args, args...))
+				{
+					std::string_view match_str = match2;
+					statusManager.error(std::string("command not find ") + match_str.data());
+				}
+
+				data.consume(match.end());
 			}
-		}
 
-		instruction_pipe.clear();
+			std::cout << matchingStr << "\n";
+		}
+		// TODO implement buffer clearing
 	}
+
+	buffer *get_buffer() { return &buff; }
+
+	read_pipe *get_pipe() { return &instruction_pipe; }
 };

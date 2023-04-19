@@ -77,6 +77,8 @@ std::mutex signal_mutex;
 std::condition_variable signal_cv;
 bool signal_processed = false;
 bool running = true;
+read_pipe *input_pipe;
+buffer *command_buffer;
 
 static void signal_handler(int signum) noexcept
 {
@@ -85,10 +87,14 @@ static void signal_handler(int signum) noexcept
 
 static void io_processor(int signum) noexcept
 {
+	std::cout << "IO\n";
+
 	{
 		std::lock_guard<std::mutex> lock(signal_mutex);
 		signal_processed = true;
 	}
+	command_buffer->write_to(input_pipe);
+
 	signal_cv.notify_one();
 
 	// TODO Actually do parsing of io
@@ -114,10 +120,11 @@ int main(int argc, const char **argv)
 			instruction("open_camera", &GPhoto::openCamera),
 			instruction("close_camera", &GPhoto::closeCamera),
 			instruction("camera", &GPhoto::process_camera_command)),
-		config.get_pipe_file_path(),
-		config.get_status_file_path(),
-		"log.txt");
+		"gphoto",
+		config.main_dir);
 
+	command_buffer = gphoto_pipe.get_buffer();
+	input_pipe = gphoto_pipe.get_pipe();
 	while (running)
 	{
 		{
@@ -127,7 +134,7 @@ int main(int argc, const char **argv)
 			signal_processed = false;
 		}
 
-		gphoto_pipe.parse_commands();
+		gphoto_pipe.process_commands();
 	}
 
 	return 0;

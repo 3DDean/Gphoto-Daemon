@@ -4,130 +4,107 @@
 #include <string>
 #include <tuple>
 #include <unistd.h>
+#include <mutex>
 
-// A stack allocated buffer
-template <std::size_t MaxSize>
-struct stack_buffer
+struct c_array
 {
-	using size_type = std::uint32_t;
-	char data[MaxSize];
-	std::size_t size = 0;
+	char *ptr;
+	std::size_t nbytes;
 
-	size_type max_size() const noexcept
+	c_array(char *ptr = nullptr, std::size_t size = 0)
+		: ptr(ptr), nbytes(size) {}
+
+	char *begin()
 	{
-		return MaxSize;
+		return ptr;
 	}
-	size_type bytes_available()
+	char *end() { return ptr + nbytes; }
+	std::size_t size() { return nbytes; }
+};
+
+struct memory_block : public c_array
+{
+	memory_block(std::size_t size)
+		: c_array(new char[size], size)
+	{}
+};
+struct buffer;
+
+struct memory_chunk
+{
+	// memory_chunk(char* ptr)
+	// 	: first(ptr), last(ptr) {}
+
+	memory_chunk(char *first, char *last)
+		: first(first), last(last) {}
+	memory_chunk(char *first, std::size_t size)
+		: first(first), last(first + size) {}
+
+	char *begin() { return first; }
+	char *end() { return last; }
+	std::size_t size() { return last - first; }
+
+	// Remove that memory for the memory chunk
+	void consume(std::size_t amount)
 	{
-		return MaxSize - size;
-	}
-
-	char *back()
-	{
-		return data + size;
-	}
-
-	int write(auto write_func)
-	{
-		auto availableBytes = MaxSize - size;
-		int32_t amountRead = write_func(data + size, availableBytes);
-
-		if (amountRead < 0)
-		{
-			return 0;
-		}
-		if (size + amountRead > MaxSize)
-		{
-			std::cout << "A buffer overflow occurred\n";
-			throw "";
-		}
-		size += amountRead;
-		return amountRead;
-	}
-
-	void clear()
-	{
-		size = 0;
-	}
-
-	void consume(int amount)
-	{
-		if (amount == size)
-		{
-			size = 0;
-		}
-		else if (amount < size)
-		{
-			auto dataStart = data + amount;
-			size -= amount;
-
-			memcpy(data, dataStart, size);
-		}
+		char *target_pos = first + amount;
+		if (target_pos < last)
+			first = target_pos;
 		else
-		{
-			throw "Overflow error";
-		}
+			throw std::runtime_error("Buffer corruption detected");
 	}
 
-	std::string_view to_string_view()
+	void consume(const char *target)
 	{
-		return std::string_view(data, size);
+		consume(target - first);
 	}
+	void set_last(char *ptr) { last = ptr; }
 
-	explicit operator std::string_view()
-	{
-		return std::string_view(data, size);
-	}
+  private:
+	char *first, *last;
 };
 
-template <typename BufferT>
-struct buffer_reader
+struct buffer
 {
-	buffer_reader(char *buffer, size_t nBytes)
-		: dataPos(buffer),
-		  dataEnd(buffer + nBytes){};
+	buffer(std::size_t size = 512)
+		: memory(size),
+		  data(memory.begin(), memory.begin()),
+		  unused(memory.begin(), memory.end())
+	{}
 
-	template <typename... ArgsT>
-	bool read(std::tuple<ArgsT...> &_parameters)
-	{
-		return read_tuple(_parameters, std::make_index_sequence<sizeof...(ArgsT)>());
-	}
+	memory_block memory;
+	memory_chunk data;
+	memory_chunk unused;
 
-	template <typename T>
-	bool read(T &_value)
-	{
-		char *readEnd = dataPos + sizeof(T);
-		// The reason this is less than or equal to is because we are checking pointer positions
-		if (readEnd <= dataEnd)
-		{
-			read_internal(&_value);
-			return true;
-		}
-		return false;
-	}
-
-  protected:
-	template <typename... ArgsT, std::size_t... I>
-	inline bool read_tuple(std::tuple<ArgsT...> &_parameters, std::index_sequence<I...>)
-	{
-		char *readEnd = dataPos + (sizeof(ArgsT) + ...);
-		if (readEnd <= dataEnd)
-		{
-			(read_internal(std::get<I>(_parameters)), ...);
-			return true;
-		}
-		return false;
-	}
+	std::mutex data_mtx, unused_mtx;
 
 	template <typename T>
-	inline void read_internal(T *_value)
+	void write_to(T* input)
 	{
-		_value = (T *)(dataPos);
-		dataPos += sizeof(T);
+		std::lock_guard lk(unused_mtx);
+
+		int amount_read = input->read_to(unused.begin(), unused.size());
+
+		unused.consume(amount_read);
 	}
 
-	char *dataPos;
-	const char *dataEnd;
+	void move_data()
+	{
+		std::lock_guard lk(data_mtx);
+		int amount = data.size();
+		memcpy(memory.begin(), data.begin(), amount);
+		data = memory_chunk(memory.begin(), memory.begin() + amount);
+	}
+
+	auto read()
+	{
+		std::unique_lock data_lock(data_mtx);
+		{
+			std::lock_guard lk(unused_mtx);
+			data.set_last(unused.begin());
+		}
+
+		return std::pair<std::unique_lock<std::mutex> &, memory_chunk &>(data_lock, data);
+	}
+	
 };
-
-// TODO endianness management
