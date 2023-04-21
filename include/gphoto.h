@@ -35,6 +35,16 @@ struct CameraListEntry
 		gp_list_get_value(list, index, &value);
 		gp_list_get_name(list, index, &name);
 	}
+
+	CameraListEntry(CameraList *list, std::string_view name_view)
+		: CameraListEntry()
+	{
+		int index;
+		gp_list_find_by_name(list, &index, name_view.data());
+
+		gp_list_get_value(list, index, &value);
+		gp_list_get_name(list, index, &name);
+	}
 };
 
 struct GPhoto
@@ -43,6 +53,8 @@ struct GPhoto
 	GPhoto(GPhoto &&move);
 	~GPhoto();
 
+	// TODO add command to open camera by name
+	// TODO add command to open first detected camera
 	std::string openCamera(int index);
 	bool closeCamera(std::string cameraID);
 	int detectCameras();

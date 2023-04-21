@@ -40,6 +40,8 @@ CameraObj::CameraObj(GPContext *contextPtr,
 				preview_count++;
 		});
 
+	create_config_file(image_path);
+	create_value_file(image_path);
 	name = nameStr;
 	// gp_camera_exit(ptr, context);
 }
@@ -82,12 +84,13 @@ int CameraObj::exit()
 	return GP_OK;
 }
 
-bool CameraObj::create_config_file(const daemon_config &config)
+bool CameraObj::create_config_file(std::filesystem::path dir)
 {
 	camera_widget root_widget(ptr, context);
+	dir /= "config.widgets";
 
-	auto config_file = config.new_camera_widget_file(name);
-	config_writer widget_writer(config_file);
+	std::ofstream file_stream(dir.c_str());
+	config_writer widget_writer(file_stream);
 	widget_writer.write(name);
 	std::stack<indent> indent_stack;
 
@@ -112,11 +115,13 @@ bool CameraObj::create_config_file(const daemon_config &config)
 	return true;
 }
 
-bool CameraObj::create_value_file(const daemon_config &config)
+bool CameraObj::create_value_file(std::filesystem::path dir)
 {
 	camera_widget root_widget(ptr, context);
-	auto config_file = config.new_camera_value_file(name);
-	value_writer widget_writer(config_file);
+
+	dir /= "config.values";
+	std::ofstream file_stream(dir.c_str());
+	value_writer widget_writer(file_stream);
 
 	auto writer_func = [&widget_writer](camera_widget &widget)
 	{

@@ -31,6 +31,11 @@ struct daemon_config
 		return std::ofstream(camera_dir + "/" + filename.data() + "." + extension.data(), std::ios_base::trunc | std::ios_base::out);
 	}
 
+	auto get_file(std::string_view filename)
+	{
+		return std::ofstream(main_dir + "/" + filename.data(), std::ios_base::trunc | std::ios_base::out);
+	}
+
 	auto get_status_file_path()
 	{
 		return statusFile;

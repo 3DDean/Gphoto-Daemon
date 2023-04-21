@@ -80,8 +80,8 @@ struct CameraObj
 	void init(GPContext *contextPtr, std::string_view nameStr, std::filesystem::path image_dir);
 	int exit();
 
-	bool create_config_file(const daemon_config &config);
-	bool create_value_file(const daemon_config &config);
+	bool create_config_file(std::filesystem::path);
+	bool create_value_file(std::filesystem::path);
 	void set_config_value(std::string_view name, std::string_view value);
 
 	int triggerCapture();

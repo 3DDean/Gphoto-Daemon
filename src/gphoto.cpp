@@ -111,20 +111,28 @@ int GPhoto::detectCameras()
 
 	abilities.detect(port_list, cameraList, context);
 
-	std::cout << cameraList.count() << "\n";
+	//TODO detect duplicate cameras
+	if(cameraList.count() > 0)
+	{
+		auto detected_cameras = config.get_file("detected_cameras.txt");
+
+		for(auto camera : cameraList)
+			detected_cameras << camera.first << "\n";
+	}
 	return cameraList.count();
 }
-
+//TODO Change this to 
 std::string GPhoto::openCamera(int index)
 {
 	int ret, modelDescriptor, portDescriptor;
 	CameraAbilities camAbilities;
 	int cameraIndex = loadedCameras.size();
 
-	// TODO add a life check
+	// TODO check if camera is already connected
 	if (index < cameraCount())
 	{
 		CameraListEntry cameraEntry(cameraList, index);
+
 		std::string_view nameStr = cameraEntry.name;
 		std::string_view camera_port = cameraEntry.value;
 		std::size_t cameraHash = std::hash<std::string_view>{}(nameStr);
