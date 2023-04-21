@@ -6,6 +6,7 @@
 #include "gphoto_wrapper/file.h"
 #include "gphoto_wrapper/list.h"
 #include "gphoto_wrapper/port_info.h"
+#include "instruction.h"
 #include <filesystem>
 #include <gphoto2/gphoto2-camera.h>
 #include <stack>
@@ -14,7 +15,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "instruction.h"
 
 struct camera_config
 {
@@ -43,7 +43,7 @@ struct timelapse_manager
 		error
 	};
 
-	void start(CameraObj &activeCamera, int delayMs, std::string_view timelapse_directory);
+	void start(CameraObj &activeCamera, int delayMs, int count, std::filesystem::path timelapse_directory);
 
 	void stop();
 
@@ -55,7 +55,7 @@ struct timelapse_manager
 	std::atomic<useconds_t> delay;
 
 	std::thread thread;
-	std::string filepath;
+	std::filesystem::path filepath;
 
 	int capture_count;
 	int failed_capture_count;
@@ -90,9 +90,14 @@ struct CameraObj
 
 	// The functional difference between capture and timelapse is that
 	// saves the image before taking another image
-	gphoto_file capture_image();
+	gphoto_file capture();
 	std::string capture(int delay, int count);
+	// Split this into 2 start and stop timelapse
+
 	bool toggle_timelapse(int delay, int count);
+
+	std::string start_timelapse(int delay, int count);
+	bool stop_timelapse();
 
 	gphoto_file get_file(std::string_view folderPath,
 						 std::string_view fileName,
@@ -155,7 +160,6 @@ struct CameraObj
 						 std::string_view &command,
 						 std::vector<std::string_view> &cmdArgs);
 
-
   private:
 	GPContext *context = nullptr;
 	Camera *ptr = nullptr;
@@ -166,6 +170,15 @@ struct CameraObj
 	std::filesystem::path image_path;
 	int capture_count;
 	int preview_count;
+
+	std::filesystem::path get_image_path(std::string_view prefix, int& image_count)
+	{
+		std::filesystem::path captureName = image_path;
+		captureName /= prefix;
+		captureName += std::to_string(image_count);
+
+		return captureName;
+	}
 
 	// Linear implementation
 	void process_widget(camera_widget root_widget, auto &&element_func, auto &&push_func, auto &&pop_func)

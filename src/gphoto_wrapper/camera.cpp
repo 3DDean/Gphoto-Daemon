@@ -1,4 +1,6 @@
 #include "gphoto_wrapper/camera.h"
+#include "common.h"
+#include <algorithm>
 
 CameraObj::CameraObj()
 	: context(nullptr),
@@ -26,6 +28,17 @@ CameraObj::CameraObj(GPContext *contextPtr,
 	set_abilities(abilities);
 	set_port_info(info);
 	gp_error_check(gp_camera_init(ptr, context), "Failed to init camera device");
+
+	std::ranges::for_each(
+		std::filesystem::directory_iterator{image_path},
+		[&](const auto &dir_entry)
+		{
+			std::string_view filename = dir_entry.path().filename().c_str();
+			if (ctre::match<"image.+">(filename))
+				capture_count++;
+			else if (ctre::match<"preview.+">(filename))
+				preview_count++;
+		});
 
 	name = nameStr;
 	// gp_camera_exit(ptr, context);
@@ -146,7 +159,7 @@ int CameraObj::triggerCapture()
 }
 
 // This currently returns early as the noises my camera makes scares my dog, so testing file handling is a bit difficult atm
-gphoto_file CameraObj::capture_image()
+gphoto_file CameraObj::capture()
 {
 	// std::string time = get_time();
 
@@ -162,6 +175,7 @@ gphoto_file CameraObj::capture_image()
 // TODO Determine if there is a memory leak here
 int CameraObj::waitForEvent(int timeout)
 {
+	//TODO Improve event handling
 	// std::vector<gp_event_variant> events;
 	int ret;
 	while (1)
@@ -207,10 +221,11 @@ int CameraObj::waitForEvent(int timeout)
 		}
 		break;
 		default:
-			if (data)
-				free(data);
 			break;
 		}
+		//Right here specificity it needs to properly handle any files returned
+		if (data)
+			free(data);
 
 		if (ret < GP_OK)
 			break;
@@ -267,12 +282,9 @@ std::string CameraObj::capture_preview()
 
 	gp_error_check(gp_camera_capture_preview(ptr, preview_capture, context), "Could not capture preview.\n");
 
-	std::filesystem::path captureName = image_path;
-	captureName /= "preview";
-	captureName += std::to_string(preview_count) += ".jpg";
+	std::filesystem::path captureName = get_image_path("preview", preview_count);
 
 	preview_capture.save(captureName.c_str());
-
 	++preview_count;
 
 	return captureName.c_str();
@@ -282,92 +294,128 @@ std::string CameraObj::capture_preview()
 // saves the image before taking another image
 std::string CameraObj::capture(int delay, int count)
 {
-	gphoto_file last_capture = capture_image();
-	std::filesystem::path capture_path = image_path;
-	capture_path /= "image";
-	capture_path += std::to_string(capture_count) += ".jpg";
+	gphoto_file last_capture = capture();
+	std::filesystem::path capture_path = get_image_path("image", capture_count);
 
-	++capture_count;
 	last_capture.save(capture_path.c_str());
+	++capture_count;
 	return capture_path.string();
+}
+
+std::string CameraObj::start_timelapse(int delay, int count)
+{
+	auto timelapse_dir = image_path;
+	timelapse_dir /= get_time();
+
+	if (!timelapse.is_running())
+		timelapse.start(*this, delay, count, timelapse_dir);
+
+	return timelapse_dir.filename();
+}
+
+bool CameraObj::stop_timelapse()
+{
+	// bool is_running = timelapse.is_running();
+	// TODO check if output_directory is empty
+
+	if (timelapse.is_running())
+		timelapse.stop();
+
+	return timelapse.is_running();
 }
 
 bool CameraObj::toggle_timelapse(int delay, int count)
 {
+	bool is_running = timelapse.is_running();
+	// TODO check if output_directory is empty
+
+	if (is_running)
+		timelapse.start(*this, delay, count, "output_directory");
+	else
+		timelapse.stop();
+
+	return is_running;
 }
 
 void CameraObj::process_command(status_manager &config,
-					 std::string_view &command,
-					 std::vector<std::string_view> &cmdArgs)
+								std::string_view &command,
+								std::vector<std::string_view> &cmdArgs)
 {
+	using capture_instruction = instruction<std::string (CameraObj::*)(int, int)>;
+
+	//TODO add a system for user clearing and handling of events
 	instruction_set commands(
-		instruction("capture", &CameraObj::capture),
+		capture_instruction("capture", &CameraObj::capture),
 		instruction("capture_preview", &CameraObj::capture_preview),
-		instruction("toggle_timelapse", &CameraObj::toggle_timelapse),
+		instruction("start_timelapse", &CameraObj::start_timelapse),
+		instruction("stop_timelapse", &CameraObj::stop_timelapse),
 		instruction("setting_config", &CameraObj::set_config_value));
 
 	commands.parse_command(config, command, cmdArgs, *this);
 }
+using millisecond_duration = std::chrono::duration<double, std::milli>;
 
-void timelapse_manager::start(CameraObj &activeCamera, int delayMs, std::string_view timelapse_directory)
+void timelapse_manager::start(CameraObj &activeCamera, int delayMs, int count, std::filesystem::path timelapse_directory)
 {
-	// auto containsIllegalTokens = ctre::search<"/">(timelapse_directory);
+	if (delayMs > 0 && thread_state != state::running)
+	{
+		filepath = timelapse_directory;
+		filepath += "/";
+		capture_count = 0;
+		if (!std::filesystem::create_directory(filepath))
+		{
+			// I don't like accidentally overriding files, though I need to look into whether this includes special files
+			capture_count = std::distance(std::filesystem::directory_iterator(filepath), std::filesystem::directory_iterator{});
+		}
 
-	// if (delayMs > 0 && thread_state != state::running && !containsIllegalTokens)
-	// {
-	// 	filepath = config.image_dir;
-	// 	filepath += "/";
-	// 	// No specified directory so use current time instead
-	// 	if (timelapse_directory.empty())
-	// 		filepath += get_time("%H-%M");
+		delay = delayMs;
+		do_run = true;
+		thread_state = state::running;
+		failed_capture_count = 0;
+		failed_capture_max = 3;
 
-	// 	if (!std::filesystem::create_directory(filepath))
-	// 	{
-	// 		// I don't like accidentally overriding files, though I need to look into whether this includes special files
-	// 		capture_count = std::distance(std::filesystem::directory_iterator(filepath), std::filesystem::directory_iterator{});
-	// 	}
-	// 	filepath += "/";
-	// 	delay = delayMs;
-	// 	do_run = true;
-	// 	thread_state = state::running;
-	// 	failed_capture_count = 0;
-	// 	failed_capture_max = 3;
+		thread = std::thread(
+			[&]()
+			{
+				int captures_this_run = 0;
+				std::chrono::microseconds delayTime(delayMs);
+				millisecond_duration delayDuration(delayTime);
 
-	// 	thread = std::thread(
-	// 		[&]()
-	// 		{
-	// 			std::chrono::microseconds delayTime(delayMs);
-	// 			millisecond_duration delayDuration(delayTime);
+				while (do_run)
+				{
+					try
+					{
+						auto image = activeCamera.capture();
+						std::string imagepath = filepath;
 
-	// 			while (do_run)
-	// 			{
-	// 				try
-	// 				{
-	// 					auto image = activeCamera.capture();
-	// 					std::string imagepath = filepath;
+						imagepath += std::to_string(capture_count);
+						image.save(imagepath);
 
-	// 					imagepath += std::to_string(capture_count);
-	// 					capture_count++;
-	// 					imagepath += ".jpg";
-	// 					image.save(imagepath);
-	// 				}
-	// 				catch (GPhotoException &e)
-	// 				{
-	// 					if (failed_capture_count > failed_capture_max)
-	// 					{
-	// 						thread_state = state::error;
-	// 						return;
-	// 					}
-	// 					failed_capture_count++;
-	// 					// LOG CAPTURE ERROR
-	// 				}
+						capture_count++;
+						captures_this_run++;
+					}
+					catch (GPhotoException &e)
+					{
+						if (failed_capture_count > failed_capture_max)
+						{
+							thread_state = state::error;
+							return;
+						}
+						failed_capture_count++;
+						// TODO LOG CAPTURE ERROR
+					}
 
-	// 				std::this_thread::sleep_for(delayDuration);
-	// 			}
-	// 			thread_state = state::stopped;
-	// 			return;
-	// 		});
-	// }
+					if (count > 0)
+						if (captures_this_run == count)
+							do_run = false;
+
+					std::this_thread::sleep_for(delayDuration);
+				}
+
+				thread_state = state::stopped;
+				return;
+			});
+	}
 }
 
 void timelapse_manager::stop()

@@ -153,9 +153,15 @@ std::pair<const char *, unsigned long int> gphoto_file::get_data_and_size() cons
 	return std::make_pair(data, size);
 }
 
-void gphoto_file::save(std::string_view filename)
+void gphoto_file::save(std::string filename)
 {
-	gp_file_save(ptr, filename.data());
+	filename += ".";
+
+	//Get file extension
+	adjust_name_for_mime_type();
+	filename += get_name();
+
+	gp_error_check(gp_file_save(ptr, filename.data()), "Failed to save camera file");
 }
 
 gphoto_file::operator CameraFile *()

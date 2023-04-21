@@ -21,8 +21,6 @@
 #include <thread>
 // https://gist.github.com/gcmurphy/c4c5222075d8e501d7d1
 
-using millisecond_duration = std::chrono::duration<double, std::milli>;
-
 // TODO Create template
 struct cli_args
 {

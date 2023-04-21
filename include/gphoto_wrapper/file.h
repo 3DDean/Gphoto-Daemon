@@ -40,7 +40,7 @@ class gphoto_file
 
 	void set_data_and_size(char *data, unsigned long int size);
 
-	void save(std::string_view filename);
+	void save(std::string filename);
 
 	std::pair<const char *, unsigned long int> get_data_and_size() const;
 
