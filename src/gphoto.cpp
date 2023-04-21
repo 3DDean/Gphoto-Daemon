@@ -143,7 +143,7 @@ std::string GPhoto::openCamera(int index)
 			auto port_info = port_list.getPortInfoListInfo(portDescriptor);
 
 			std::filesystem::path camera_path = config.camera_dir;
-			camera_path /= "camera" + std::to_string(cameraIndex);
+			camera_path /= nameStr;
 
 			std::filesystem::create_directories(camera_path);
 			loadedCameras.emplace(nameStr, new CameraObj(context, camAbilities, port_info, nameStr, camera_port, camera_path));
@@ -165,7 +165,9 @@ std::string GPhoto::openCamera(int index)
 
 bool GPhoto::closeCamera(std::string cameraID)
 {
-	throw "Not yet implemented";
+	auto it = loadedCameras.at(cameraID);
+	loadedCameras.erase(cameraID);
+	delete it;
 }
 
 void GPhoto::process_camera_command(status_manager &config,

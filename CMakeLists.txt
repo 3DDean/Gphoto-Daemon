@@ -23,6 +23,7 @@ set(SROURCE_FILES
 	gphoto.cpp
 	named_pipe.cpp
 	daemon_config.cpp
+	linux_error.cpp
 	${GPHOTO_WRAPPER_SRC}
 )
 

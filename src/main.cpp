@@ -14,6 +14,7 @@
 
 #include "common.h"
 #include "format.h"
+#include "linux_error.h"
 #include "status.h"
 #include <condition_variable>
 #include <csignal>
@@ -83,17 +84,23 @@ static void signal_handler(int signum) noexcept
 	running = false;
 }
 
+//TODO fix this
 static void io_processor(int signum) noexcept
 {
-	std::cout << "IO\n";
-
 	{
 		std::lock_guard<std::mutex> lock(signal_mutex);
 		signal_processed = true;
 	}
-	command_buffer->write_to(input_pipe);
-
-	signal_cv.notify_one();
+	try
+	{
+		command_buffer->write_to(input_pipe);
+		signal_cv.notify_one();
+	}
+	catch (linux_exception &e)
+	{
+		if(e.error_num() != EAGAIN)
+			std::cout << "exception caught " << e.what() << "\n";
+	}
 
 	// TODO Actually do parsing of io
 }
@@ -107,10 +114,6 @@ int main(int argc, const char **argv)
 		config.init(args.config_file);
 	}
 
-	// Linux signal handling, more information in signal.h
-	signal(SIGINT, &signal_handler);
-	signal(SIGIO, io_processor);
-
 	command_pipe gphoto_pipe(
 		object_instruction_set(
 			GPhoto(config),
@@ -123,6 +126,9 @@ int main(int argc, const char **argv)
 
 	command_buffer = gphoto_pipe.get_buffer();
 	input_pipe = gphoto_pipe.get_pipe();
+
+	signal(SIGINT, &signal_handler);
+	signal(SIGIO, io_processor);
 	while (running)
 	{
 		{

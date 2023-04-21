@@ -13,6 +13,18 @@ struct from_string
 };
 
 template <>
+struct from_string<std::string_view>
+{
+	std::string_view operator()(std::string_view arg) { return arg; };
+};
+
+template <>
+struct from_string<std::string>
+{
+	std::string_view operator()(std::string_view arg) { return std::string(arg); };
+};
+
+template <>
 struct from_string<int>
 {
 	int operator()(std::string_view arg)

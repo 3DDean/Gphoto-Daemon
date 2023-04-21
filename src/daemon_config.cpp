@@ -101,10 +101,7 @@ void daemon_config::init(std::string_view config_path)
 		std::filesystem::create_directory(path);
 	};
 
-
 	directory_maker(camera_dir);
-	directory_maker(image_dir);
-	directory_maker(preview_dir);
 
 	directory_placer(log_file);
 

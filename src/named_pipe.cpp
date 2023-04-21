@@ -1,10 +1,10 @@
 #include "named_pipe.h"
 
+#include "linux_error.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-
 #ifndef FIFO_PERMISSIONS
 #define FIFO_PERMISSIONS 0777
 #endif
@@ -13,11 +13,11 @@ named_pipe::named_pipe(const char *filepath, const int open_mode)
 {
 	if (access(filepath, F_OK) == -1)
 		if (mkfifo(filepath, FIFO_PERMISSIONS) != 0)
-			throw std::runtime_error(std::string("Could not create fifo: ") + strerror(errno));
+			throw linux_exception("Could not create fifo", errno);
 
 	pipe_fd = open(filepath, open_mode);
 	if (pipe_fd == -1)
-		throw std::runtime_error(std::string("Could not open fifo: ") + strerror(errno));
+		throw linux_exception("Could not open fifo", errno);
 
 	int ret = fcntl(pipe_fd, F_SETOWN, getpid());
 	if (ret < 0)
@@ -68,7 +68,7 @@ int read_pipe::read_to(char *ptr, std::size_t size)
 	if (amountRead <= 0)
 	{
 		auto errvalue = errno;
-		std::cout << strerror(errvalue) << "\n";
+		throw linux_exception("Failed to read file", errvalue);
 	}
 	return amountRead;
 }
